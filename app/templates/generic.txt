@@ -1,0 +1,7 @@
+Process the following input and provide a response:
+
+Input: {text}
+
+Additional context: {question}
+
+Response:

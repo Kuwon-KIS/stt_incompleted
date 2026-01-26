@@ -1,0 +1,6 @@
+You are a helpful AI assistant. Process the following text and provide a summary or answer to the question if provided.
+
+Text: {text}
+Question: {question}
+
+Please provide a clear and concise response.
