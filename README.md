@@ -32,7 +32,7 @@
    - `/process/batch/submit`: 배치 작업 제출 (job_id 반환)
    - `/process/batch/status/{job_id}`: 작업 상태 및 결과 조회
 
-4. **Prompt Template 관리** (새로운 기능)
+4. **Prompt Template 관리**
    - `/templates`: 사용 가능한 템플릿 목록
    - `/templates/{name}`: 특정 템플릿 조회
    - `POST /templates`: 새 템플릿 생성/수정
@@ -79,6 +79,7 @@
        MODEL_PATH = "qwen/qwen-7b-chat"
        CALLBACK_URL = "http://localhost:8002/mock/callback"
        SFTP_HOST = "localhost"
+   ```
 
 ### 설정 파일 예시
 
@@ -264,7 +265,6 @@ curl -X POST http://localhost:8002/process \
   }'
 ```
 
-
 ### 3. 인증 헤더를 포함한 처리
 
 ```bash
@@ -306,31 +306,9 @@ curl -X POST http://localhost:8002/process \
   }'
 ```
 
-### 5. 환경변수를 통한 SFTP 자격증명 사용
+### 5. Prompt Template 사용
 
-환경에서 다음과 같이 설정:
-```bash
-export SFTP_CRED_PROD_USERNAME=username
-export SFTP_CRED_PROD_PASSWORD=password
-export SFTP_CRED_PROD_KEY=/path/to/key.pem  # 또는 패스워드만 사용
-```
-
-그 후 요청:
-```bash
-curl -X POST http://localhost:8002/process \
-  -H "Content-Type: application/json" \
-  -d '{
-    "host": "sftp.example.com",
-    "credential_name": "prod",
-    "remote_path": "/path/to/file.txt",
-    "vllm_url": "http://vllm-api:8000/infer",
-    "callback_url": "http://callback-handler:5000/process"
-  }'
-```
-
-### 6. Prompt Template 사용
-
-#### 6.1 사용 가능한 템플릿 목록
+#### 5.1 사용 가능한 템플릿 목록
 
 ```bash
 curl http://localhost:8002/templates
@@ -344,13 +322,13 @@ curl http://localhost:8002/templates
 }
 ```
 
-#### 6.2 특정 템플릿 조회
+#### 5.2 특정 템플릿 조회
 
 ```bash
 curl http://localhost:8002/templates/qwen_default
 ```
 
-#### 6.3 Template을 사용한 처리 (Qwen)
+#### 5.3 Template을 사용한 처리 (Qwen)
 
 ```bash
 curl -X POST http://localhost:8002/process \
@@ -388,7 +366,7 @@ Question: Summarize this text.
 Please provide a clear and concise response.
 ```
 
-#### 6.4 Template 없이 Raw Text 사용
+#### 5.4 Template 없이 Raw Text 사용
 
 template을 지정하지 않으면 SFTP에서 읽은 text를 그대로 vLLM에 전달합니다:
 
@@ -405,16 +383,10 @@ curl -X POST http://localhost:8002/process \
   }'
 ```
 
-이 경우 vLLM에 전달되는 입력값:
-```json
-{
-  "input": "file.txt의 전체 내용"
-}
-```
-
-#### 6.5 Custom Prompt 사용 (인라인)
+#### 5.5 Custom Prompt 사용 (인라인)
 
 Template을 거치지 않고 커스텀 프롬프트를 직접 전달:
+
 ```bash
 curl -X POST http://localhost:8002/process \
   -H "Content-Type: application/json" \
@@ -429,7 +401,7 @@ curl -X POST http://localhost:8002/process \
   }'
 ```
 
-#### 6.6 새 Template 생성
+#### 5.6 새 Template 생성
 
 ```bash
 curl -X POST http://localhost:8002/templates \
@@ -440,19 +412,19 @@ curl -X POST http://localhost:8002/templates \
   }'
 ```
 
-#### 6.7 Template 삭제
+#### 5.7 Template 삭제
 
 ```bash
 curl -X DELETE http://localhost:8002/templates/my_custom_template
 ```
 
-#### 6.8 Template 새로고침 (디스크에서 다시 로드)
+#### 5.8 Template 새로고침 (디스크에서 다시 로드)
 
 ```bash
 curl -X POST http://localhost:8002/templates/refresh
 ```
 
-### 7. 동기 배치 처리 (날짜 범위로 파일 자동 발견)
+### 6. 동기 배치 처리 (날짜 범위로 파일 자동 발견)
 
 ```bash
 curl -X POST http://localhost:8002/process/batch \
@@ -492,14 +464,13 @@ curl -X POST http://localhost:8002/process/batch \
         "model_output": {"summary": "...", "tokens": 123},
         "callback_status": 200
       }
-    },
-    ...
+    }
   ],
   "total": 10
 }
 ```
 
-### 6. 비동기 배치 처리 (job_id 반환)
+### 7. 비동기 배치 처리 (job_id 반환)
 
 작업 제출:
 ```bash
@@ -522,7 +493,7 @@ curl -X POST http://localhost:8002/process/batch/submit \
 응답:
 ```json
 {
-  "job_id": "f8743538-6b32-401a-85fe-6f68b7387add", 
+  "job_id": "f8743538-6b32-401a-85fe-6f68b7387add",
   "status": "submitted",
   "date_range": "20260120 to 20260127"
 }
@@ -552,17 +523,6 @@ curl http://localhost:8002/process/batch/status/f8743538-6b32-401a-85fe-6f68b738
       "result": {
         "status": "ok",
         "model_output": {"summary": "...", "tokens": 123},
-        "callback_status": 200
-      }
-    },
-    {
-      "index": 1,
-      "date": "20260120",
-      "filename": "file2.txt",
-      "success": true,
-      "result": {
-        "status": "ok",
-        "model_output": {"summary": "...", "tokens": 456},
         "callback_status": 200
       }
     }
@@ -623,13 +583,6 @@ curl -X POST http://localhost:8002/process \
   }'
 ```
 
-## 주의사항
-
-1. **시크릿 관리**: 프로덕션에서는 SFTP 자격증명과 인증 토큰을 Docker secrets 또는 mounted volumes로 전달하세요.
-2. **상태 저장**: 현재 배치 작업 상태는 메모리에 저장됩니다. 프로덕션에서는 Redis 또는 데이터베이스로 전환하세요.
-3. **타임아웃**: 기본 vLLM 타임아웃은 30초, 콜백 타임아웃은 10초입니다. 필요 시 조정하세요.
-4. **재시도**: vLLM은 최대 3회 재시도(1초 간격), 콜백은 최대 2회 재시도(0.5초 간격)합니다.
-
 ## Docker 빌드 및 배포
 
 ### 빌드 스크립트 사용 (권장)
@@ -648,7 +601,7 @@ docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
 #### 사용 방법
 
-**1. 로컬에서만 빌드 (--load, 단일 아키텍처로 제한)**
+**1. 로컬에서만 빌드 (단일 아키텍처)**
 ```bash
 chmod +x build.sh
 ./build.sh docker.io/your-username/stt-service latest
@@ -659,7 +612,18 @@ chmod +x build.sh
 ./build.sh docker.io/your-username/stt-service latest --push
 ```
 
-**3. 커스텀 태그로 빌드 및 푸시**
+**3. TAR 파일로 저장 (Linux 서버 전송용)**
+```bash
+./build.sh docker.io/your-username/stt-service latest --save
+```
+
+이 옵션은 이미지를 `{레지스트리명}-{태그}.tar` 파일로 저장합니다. 생성된 TAR 파일을 Linux 서버로 전송한 후 다음 명령어로 로드할 수 있습니다:
+
+```bash
+docker load -i docker.io-your-username-stt-service-latest.tar
+```
+
+**4. 커스텀 태그로 빌드 및 푸시**
 ```bash
 ./build.sh ghcr.io/your-username/stt-service v1.0.0 --push
 ```
@@ -668,11 +632,15 @@ chmod +x build.sh
 
 - `repository` (필수): Docker 레지스트리 주소 (예: `docker.io/username/myapp`)
 - `tag` (선택): 이미지 태그, 기본값은 `latest`
-- `--push`: 빌드 완료 후 레지스트리에 푸시
+- `--push`: 빌드 완료 후 레지스트리에 푸시 (멀티 아키텍처 지원)
+- `--save`: 빌드 후 TAR 파일로 저장 (다른 서버로 전송 가능)
 
 #### 예제
 
 ```bash
+# 로컬 빌드
+./build.sh docker.io/myusername/stt-service latest
+
 # Docker Hub에 푸시
 ./build.sh docker.io/myusername/stt-service latest --push
 
@@ -681,6 +649,28 @@ chmod +x build.sh
 
 # 특정 버전으로 빌드 및 푸시
 ./build.sh registry.example.com/myapp/stt-service 2026-01-27 --push
+
+# TAR 파일로 저장 (Linux 서버 전송용)
+./build.sh docker.io/myusername/stt-service latest --save
+```
+
+#### TAR 파일로 저장하여 서버에 전송하기
+
+1. **로컬에서 TAR 파일 생성**
+```bash
+./build.sh myregistry.com/stt-service v1.0.0 --save
+# 결과: myregistry.com-stt-service-v1.0.0.tar
+```
+
+2. **Linux 서버로 파일 전송**
+```bash
+scp myregistry.com-stt-service-v1.0.0.tar user@remote-server:/path/to/
+```
+
+3. **서버에서 이미지 로드**
+```bash
+docker load -i myregistry.com-stt-service-v1.0.0.tar
+docker run -e APP_ENV=production ... myregistry.com/stt-service:v1.0.0
 ```
 
 ### 수동 빌드 (빌드 스크립트 미사용)
@@ -717,6 +707,13 @@ docker run -p 8002:8002 \
   -e SFTP_PASSWORD=your-pass \
   docker.io/your-username/stt-service:latest
 ```
+
+## 주의사항
+
+1. **시크릿 관리**: 프로덕션에서는 SFTP 자격증명과 인증 토큰을 Docker secrets 또는 mounted volumes로 전달하세요.
+2. **상태 저장**: 현재 배치 작업 상태는 메모리에 저장됩니다. 프로덕션에서는 Redis 또는 데이터베이스로 전환하세요.
+3. **타임아웃**: 기본 vLLM 타임아웃은 30초, 콜백 타임아웃은 10초입니다. 필요 시 조정하세요.
+4. **재시도**: vLLM은 최대 3회 재시도(1초 간격), 콜백은 최대 2회 재시도(0.5초 간격)합니다.
 
 ## 라이선스 및 참고
 
