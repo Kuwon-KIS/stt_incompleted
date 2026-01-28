@@ -1,3 +1,31 @@
+# Configuration files
+app/config.py
+.env
+.env.local
+
+# Python
 .pyc
 __pycache__
 _scratch
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -7,6 +7,7 @@
 ```
 .
 ├── Dockerfile                 # Python 3.10.19-slim-trixie 기반 컨테이너 이미지
+├── build.sh                   # Docker buildx를 사용한 멀티 아키텍처 빌드 스크립트
 ├── requirements.txt           # Python 종속성 (fastapi, uvicorn, paramiko, requests)
 ├── app/
 │   ├── main.py               # FastAPI 애플리케이션 및 엔드포인트
@@ -53,6 +54,156 @@
    - `/mock/vllm`: 테스트용 가짜 vLLM
    - `/mock/callback`: 테스트용 가짜 콜백
 
+## 설정
+
+### 로컬 설정 파일 (config.py)
+
+이 프로젝트는 로컬 설정 파일 `app/config.py`를 지원합니다. 모든 파라미터를 API 요청에 넣을 필요 없이 설정 파일에 기본값을 저장할 수 있습니다.
+
+1. **설정 파일 생성**
+
+   `app/config.example.py`를 복사하여 `app/config.py`를 생성하세요:
+
+   ```bash
+   cp app/config.example.py app/config.py
+   ```
+
+2. **개발용 또는 프로덕션용 설정**
+
+   `app/config.py`를 열어서 `DevelopmentConfig` 또는 `ProductionConfig`에 맞게 수정하세요:
+
+   ```python
+   # Development (기본값)
+   class DevelopmentConfig(Config):
+       LLM_URL = "http://localhost:8000"
+       MODEL_PATH = "qwen/qwen-7b-chat"
+       CALLBACK_URL = "http://localhost:8002/mock/callback"
+       SFTP_HOST = "localhost"
+
+### 설정 파일 예시
+
+#### 개발용 설정 (config.dev.example.py)
+
+```python
+class DevelopmentConfig:
+    CALL_TYPE = "vllm"
+    LLM_URL = "http://localhost:8000"  # Mock 서버 사용 가능
+    MODEL_PATH = "qwen/qwen-7b-chat"
+    
+    SFTP_HOST = "localhost"
+    SFTP_USERNAME = "demo"
+    SFTP_PASSWORD = "password"
+    
+    CALLBACK_URL = "http://localhost:8002/mock/callback"
+    TEMPLATE_NAME = "qwen_default"
+    BATCH_CONCURRENCY = 2
+
+config = DevelopmentConfig()
+```
+
+#### 프로덕션용 설정 (config.prod.example.py)
+
+```python
+import os
+
+class ProductionConfig:
+    # 모든 설정이 환경변수에서 읽음
+    CALL_TYPE = os.getenv("CALL_TYPE", "vllm")
+    LLM_URL = os.getenv("LLM_URL")  # 필수
+    MODEL_PATH = os.getenv("MODEL_PATH")  # 필수
+    
+    SFTP_HOST = os.getenv("SFTP_HOST")  # 필수
+    SFTP_USERNAME = os.getenv("SFTP_USERNAME")
+    SFTP_PASSWORD = os.getenv("SFTP_PASSWORD")
+    SFTP_KEY = os.getenv("SFTP_KEY")  # 또는 Base64 인코딩된 키
+    
+    CALLBACK_URL = os.getenv("CALLBACK_URL")  # 필수
+    BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "8"))
+
+config = ProductionConfig()
+```
+
+실제 설정 파일 생성:
+
+```bash
+# 개발용
+cp app/config.dev.example.py app/config.py
+# 프로덕션용
+cp app/config.prod.example.py app/config.py
+```
+
+또는 `app/config.example.py`에서 원하는 부분만 복사:
+
+```bash
+cp app/config.example.py app/config.py
+vi app/config.py  # 수정
+```
+
+### 환경변수
+
+모든 설정은 환경변수로도 제어할 수 있습니다 (우선순위: 환경변수 > config.py):
+
+```bash
+# LLM 설정
+export CALL_TYPE=vllm                           # "vllm" 또는 "agent"
+export LLM_URL=http://vllm-server:8000
+export LLM_AUTH_HEADER="Bearer token"
+export MODEL_PATH=qwen/qwen-7b-chat             # vLLM 사용 시
+export AGENT_NAME=my-agent                      # Agent 사용 시
+export USE_STREAMING=false
+
+# SFTP 설정
+export SFTP_HOST=sftp.example.com
+export SFTP_PORT=22
+export SFTP_USERNAME=user
+export SFTP_PASSWORD=password
+export SFTP_KEY=/path/to/id_rsa                 # 또는 Base64 인코딩된 키
+export SFTP_ROOT_PATH=/
+
+# 콜백 설정
+export CALLBACK_URL=http://callback-server:3000/callback
+export CALLBACK_AUTH_HEADER="Bearer callback-token"
+
+# 처리 설정
+export TEMPLATE_NAME=qwen_default
+export BATCH_CONCURRENCY=4
+export APP_ENV=development                      # "development" 또는 "production"
+```
+
+### Docker 환경에서 환경변수 사용
+
+```bash
+docker run -d \
+  -e APP_ENV=production \
+  -e CALL_TYPE=vllm \
+  -e LLM_URL=http://vllm-server:8000 \
+  -e MODEL_PATH=qwen/qwen-7b-chat \
+  -e SFTP_HOST=sftp.example.com \
+  -e SFTP_USERNAME=user \
+  -e SFTP_PASSWORD=password \
+  -e CALLBACK_URL=http://callback-server:3000/callback \
+  -e BATCH_CONCURRENCY=8 \
+  -p 8002:8002 \
+  stt-fastapi-sftp
+```
+
+또는 `.env` 파일로:
+
+```bash
+# .env (Git에 저장되지 않음)
+APP_ENV=production
+CALL_TYPE=vllm
+LLM_URL=http://vllm-server:8000
+MODEL_PATH=qwen/qwen-7b-chat
+SFTP_HOST=sftp.example.com
+SFTP_USERNAME=user
+SFTP_PASSWORD=password
+CALLBACK_URL=http://callback-server:3000/callback
+
+# 실행
+docker run --env-file .env -p 8002:8002 stt-fastapi-sftp
+```
+
 ## 빌드 및 실행
 
 ### Docker 빌드
@@ -82,6 +233,19 @@ curl -sS http://localhost:8002/healthz
 
 ### 2. 단일 파일 처리 (inline_text로 테스트)
 
+최소 요청 (나머지는 config.py에서):
+
+```bash
+curl -X POST http://localhost:8002/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "remote_path": "/path/to/file.txt",
+    "inline_text": "hello world"
+  }'
+```
+
+전체 파라미터:
+
 ```bash
 curl -X POST http://localhost:8002/process \
   -H "Content-Type: application/json" \
@@ -91,11 +255,15 @@ curl -X POST http://localhost:8002/process \
     "username": "user",
     "password": "pass",
     "remote_path": "/path/to/file.txt",
-    "vllm_url": "http://localhost:8002/mock/vllm",
+    "call_type": "vllm",
+    "llm_url": "http://localhost:8000",
+    "model_path": "qwen/qwen-7b-chat",
     "callback_url": "http://localhost:8002/mock/callback",
-    "inline_text": "hello world"
+    "inline_text": "hello world",
+    "template_name": "qwen_default"
   }'
 ```
+
 
 ### 3. 인증 헤더를 포함한 처리
 
@@ -220,7 +388,9 @@ Question: Summarize this text.
 Please provide a clear and concise response.
 ```
 
-#### 6.4 Template을 사용한 처리 (GPT-4-mini)
+#### 6.4 Template 없이 Raw Text 사용
+
+template을 지정하지 않으면 SFTP에서 읽은 text를 그대로 vLLM에 전달합니다:
 
 ```bash
 curl -X POST http://localhost:8002/process \
@@ -230,12 +400,16 @@ curl -X POST http://localhost:8002/process \
     "username": "user",
     "password": "pass",
     "remote_path": "/path/to/file.txt",
-    "vllm_url": "http://gpt4mini-api:8000/infer",
-    "callback_url": "http://callback-handler:5000/process",
-    "inline_text": "Machine learning is a subset of artificial intelligence.",
-    "template_name": "gpt4mini_default",
-    "question": "Explain what ML is."
+    "vllm_url": "http://vllm-api:8000/infer",
+    "callback_url": "http://callback-handler:5000/process"
   }'
+```
+
+이 경우 vLLM에 전달되는 입력값:
+```json
+{
+  "input": "file.txt의 전체 내용"
+}
 ```
 
 #### 6.5 Custom Prompt 사용 (인라인)
@@ -251,7 +425,6 @@ curl -X POST http://localhost:8002/process \
     "remote_path": "/path/to/file.txt",
     "vllm_url": "http://vllm-api:8000/infer",
     "callback_url": "http://callback-handler:5000/process",
-    "inline_text": "Hello world",
     "custom_prompt": "Translate to Spanish: Hello world"
   }'
 ```
@@ -279,35 +452,31 @@ curl -X DELETE http://localhost:8002/templates/my_custom_template
 curl -X POST http://localhost:8002/templates/refresh
 ```
 
-### 7. 동기 배치 처리 (한 번에 결과 반환)
+### 7. 동기 배치 처리 (날짜 범위로 파일 자동 발견)
 
 ```bash
 curl -X POST http://localhost:8002/process/batch \
   -H "Content-Type: application/json" \
   -d '{
-    "items": [
-      {
-        "host": "sftp.example.com",
-        "username": "user",
-        "password": "pass",
-        "remote_path": "/file1.txt",
-        "vllm_url": "http://localhost:8002/mock/vllm",
-        "callback_url": "http://localhost:8002/mock/callback",
-        "inline_text": "item 1"
-      },
-      {
-        "host": "sftp.example.com",
-        "username": "user",
-        "password": "pass",
-        "remote_path": "/file2.txt",
-        "vllm_url": "http://localhost:8002/mock/vllm",
-        "callback_url": "http://localhost:8002/mock/callback",
-        "inline_text": "item 2"
-      }
-    ],
-    "concurrency": 2
+    "host": "sftp.example.com",
+    "username": "user",
+    "password": "pass",
+    "start_date": "20260120",
+    "end_date": "20260127",
+    "root_path": "/data",
+    "vllm_url": "http://vllm-api:8000/infer",
+    "callback_url": "http://callback-handler:5000/process",
+    "template_name": "qwen_default",
+    "question": "Summarize the contents",
+    "concurrency": 4
   }'
 ```
+
+이 요청은 다음을 자동으로 처리합니다:
+- `/data/20260120/` 폴더의 모든 `.txt` 파일
+- `/data/20260121/` 폴더의 모든 `.txt` 파일
+- ...
+- `/data/20260127/` 폴더의 모든 `.txt` 파일
 
 응답:
 ```json
@@ -315,23 +484,18 @@ curl -X POST http://localhost:8002/process/batch \
   "results": [
     {
       "index": 0,
+      "date": "20260120",
+      "filename": "file1.txt",
       "success": true,
       "result": {
         "status": "ok",
-        "model_output": {"summary": "item 1", "tokens": 2},
+        "model_output": {"summary": "...", "tokens": 123},
         "callback_status": 200
       }
     },
-    {
-      "index": 1,
-      "success": true,
-      "result": {
-        "status": "ok",
-        "model_output": {"summary": "item 2", "tokens": 2},
-        "callback_status": 200
-      }
-    }
-  ]
+    ...
+  ],
+  "total": 10
 }
 ```
 
@@ -342,24 +506,26 @@ curl -X POST http://localhost:8002/process/batch \
 curl -X POST http://localhost:8002/process/batch/submit \
   -H "Content-Type: application/json" \
   -d '{
-    "items": [
-      {
-        "host": "sftp.example.com",
-        "username": "user",
-        "password": "pass",
-        "remote_path": "/file1.txt",
-        "vllm_url": "http://vllm-api:8000/infer",
-        "callback_url": "http://callback-handler:5000/process",
-        "inline_text": "processing item 1"
-      }
-    ],
-    "concurrency": 2
+    "host": "sftp.example.com",
+    "username": "user",
+    "password": "pass",
+    "start_date": "20260120",
+    "end_date": "20260127",
+    "root_path": "/data",
+    "vllm_url": "http://vllm-api:8000/infer",
+    "callback_url": "http://callback-handler:5000/process",
+    "template_name": "qwen_default",
+    "concurrency": 4
   }'
 ```
 
 응답:
 ```json
-{"job_id": "f8743538-6b32-401a-85fe-6f68b7387add", "status": "submitted"}
+{
+  "job_id": "f8743538-6b32-401a-85fe-6f68b7387add", 
+  "status": "submitted",
+  "date_range": "20260120 to 20260127"
+}
 ```
 
 상태 조회:
@@ -375,16 +541,28 @@ curl http://localhost:8002/process/batch/status/f8743538-6b32-401a-85fe-6f68b738
   "created_at": "2026-01-26T12:36:08.763198+00:00",
   "started_at": "2026-01-26T12:36:08.764064+00:00",
   "completed_at": "2026-01-26T12:36:08.767477+00:00",
+  "date_range": "20260120 to 20260127",
+  "error": null,
   "results": [
     {
       "index": 0,
+      "date": "20260120",
+      "filename": "file1.txt",
       "success": true,
       "result": {
         "status": "ok",
-        "model_output": {
-          "summary": "processing item 1",
-          "tokens": 3
-        },
+        "model_output": {"summary": "...", "tokens": 123},
+        "callback_status": 200
+      }
+    },
+    {
+      "index": 1,
+      "date": "20260120",
+      "filename": "file2.txt",
+      "success": true,
+      "result": {
+        "status": "ok",
+        "model_output": {"summary": "...", "tokens": 456},
         "callback_status": 200
       }
     }
@@ -445,30 +623,100 @@ curl -X POST http://localhost:8002/process \
   }'
 ```
 
-## 예제: GPT-4-mini 모델 사용
-
-```bash
-curl -X POST http://localhost:8002/process \
-  -H "Content-Type: application/json" \
-  -d '{
-    "host": "sftp.your-server.com",
-    "username": "sftp_user",
-    "password": "sftp_pass",
-    "remote_path": "/documents/research.txt",
-    "vllm_url": "http://gpt4mini-server:8000/v1/chat/completions",
-    "vllm_auth_header": "Bearer gpt-token",
-    "callback_url": "http://your-backend:5000/results",
-    "template_name": "gpt4mini_default",
-    "question": "What are the main research findings?"
-  }'
-```
-
 ## 주의사항
 
 1. **시크릿 관리**: 프로덕션에서는 SFTP 자격증명과 인증 토큰을 Docker secrets 또는 mounted volumes로 전달하세요.
 2. **상태 저장**: 현재 배치 작업 상태는 메모리에 저장됩니다. 프로덕션에서는 Redis 또는 데이터베이스로 전환하세요.
 3. **타임아웃**: 기본 vLLM 타임아웃은 30초, 콜백 타임아웃은 10초입니다. 필요 시 조정하세요.
 4. **재시도**: vLLM은 최대 3회 재시도(1초 간격), 콜백은 최대 2회 재시도(0.5초 간격)합니다.
+
+## Docker 빌드 및 배포
+
+### 빌드 스크립트 사용 (권장)
+
+이 프로젝트는 `build.sh` 스크립트를 제공합니다. 이 스크립트는 Docker buildx를 사용하여 `linux/amd64`와 `linux/arm64` 아키텍처 모두를 지원하는 이미지를 빌드합니다.
+
+#### 사전 요구사항
+
+```bash
+# Docker buildx가 설치되어 있어야 합니다
+docker buildx version
+
+# 필요한 경우 qemu 설정
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+```
+
+#### 사용 방법
+
+**1. 로컬에서만 빌드 (--load, 단일 아키텍처로 제한)**
+```bash
+chmod +x build.sh
+./build.sh docker.io/your-username/stt-service latest
+```
+
+**2. 레지스트리에 직접 푸시 (권장, 멀티 아키텍처 지원)**
+```bash
+./build.sh docker.io/your-username/stt-service latest --push
+```
+
+**3. 커스텀 태그로 빌드 및 푸시**
+```bash
+./build.sh ghcr.io/your-username/stt-service v1.0.0 --push
+```
+
+#### 스크립트 옵션
+
+- `repository` (필수): Docker 레지스트리 주소 (예: `docker.io/username/myapp`)
+- `tag` (선택): 이미지 태그, 기본값은 `latest`
+- `--push`: 빌드 완료 후 레지스트리에 푸시
+
+#### 예제
+
+```bash
+# Docker Hub에 푸시
+./build.sh docker.io/myusername/stt-service latest --push
+
+# GitHub Container Registry에 푸시
+./build.sh ghcr.io/myusername/stt-service v1.0.0 --push
+
+# 특정 버전으로 빌드 및 푸시
+./build.sh registry.example.com/myapp/stt-service 2026-01-27 --push
+```
+
+### 수동 빌드 (빌드 스크립트 미사용)
+
+#### 멀티 아키텍처 빌드
+
+```bash
+# builder 생성 (최초 1회)
+docker buildx create --name multiarch-builder --use
+
+# 빌드 및 푸시
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t docker.io/your-username/stt-service:latest \
+  --push \
+  .
+```
+
+#### 로컬 빌드 (단일 아키텍처)
+
+```bash
+docker build -t stt-service:latest .
+```
+
+### 이미지 실행
+
+```bash
+# 기본 실행
+docker run -p 8002:8002 docker.io/your-username/stt-service:latest
+
+# 환경변수와 함께 실행
+docker run -p 8002:8002 \
+  -e SFTP_USERNAME=your-user \
+  -e SFTP_PASSWORD=your-pass \
+  docker.io/your-username/stt-service:latest
+```
 
 ## 라이선스 및 참고
 
