@@ -57,9 +57,12 @@ def load_templates():
     global TEMPLATE_STORE
     TEMPLATE_STORE = {}
     if TEMPLATE_DIR.exists():
-        for template_file in TEMPLATE_DIR.glob("*.txt"):
+        for template_file in TEMPLATE_DIR.glob("*"):
+            # Skip files starting with . or directories
+            if template_file.name.startswith('.') or template_file.is_dir():
+                continue
             name = template_file.stem
-            content = template_file.read_text(encoding="utf-8")
+            content = template_file.read_text(encoding="utf-8", errors='replace')
             TEMPLATE_STORE[name] = content
             logger.info("loaded template: %s", name)
     else:
@@ -293,7 +296,18 @@ def process_sync(req: ProcessRequest) -> dict:
             try:
                 # if target is local mock endpoint
                 parsed = urlparse(url)
-                if parsed.hostname in ("localhost", "127.0.0.1") and parsed.port == 8002 and parsed.path in ("/mock/vllm", "/mock/callback", "/mock/agent"):
+                # Check if this is a mock endpoint (includes v1/chat/completions path)
+                is_mock_vllm = (parsed.hostname in ("localhost", "127.0.0.1") and 
+                               parsed.port == 8002 and 
+                               ("/mock/vllm" in parsed.path or parsed.path == "/mock/vllm"))
+                is_mock_agent = (parsed.hostname in ("localhost", "127.0.0.1") and 
+                                parsed.port == 8002 and 
+                                ("/mock/agent" in parsed.path or parsed.path == "/mock/agent"))
+                is_mock_callback = (parsed.hostname in ("localhost", "127.0.0.1") and 
+                                   parsed.port == 8002 and 
+                                   "/mock/callback" in parsed.path)
+                
+                if is_mock_vllm or is_mock_agent or is_mock_callback:
                     class SimpleResp:
                         def __init__(self, json_obj, status_code: int = 200, headers: dict | None = None):
                             self._json = json_obj
@@ -311,9 +325,9 @@ def process_sync(req: ProcessRequest) -> dict:
                             if self.status_code >= 400:
                                 raise requests.HTTPError(f"status={self.status_code}")
 
-                    if parsed.path == "/mock/vllm":
+                    if is_mock_vllm:
                         resp = SimpleResp(mock_vllm_sync(json_payload))
-                    elif parsed.path == "/mock/agent":
+                    elif is_mock_agent:
                         resp = SimpleResp(mock_agent_sync(json_payload))
                     else:
                         resp = SimpleResp(mock_callback_sync(json_payload))
@@ -538,12 +552,12 @@ async def process_batch(req: BatchProcessRequest):
             target_dates.sort()
             logger.info("found %d date folders in range [%s, %s]: %s", len(target_dates), req.start_date, req.end_date, target_dates)
             
-            # Collect all .txt files from target date folders
+            # Collect all files from target date folders (no extension filter)
             file_paths = []  # List of (date_folder, filename, full_path)
             for date_folder in target_dates:
                 folder_path = f"{req.root_path}/{date_folder}".replace("//", "/")
-                txt_files = client.list_files(folder_path, suffix=".txt")
-                logger.debug("found %d txt files in %s", len(txt_files), folder_path)
+                txt_files = client.list_files(folder_path, suffix=None)
+                logger.debug("found %d files in %s", len(txt_files), folder_path)
                 
                 for filename in txt_files:
                     full_path = f"{folder_path}/{filename}"
@@ -552,7 +566,7 @@ async def process_batch(req: BatchProcessRequest):
             logger.info("total files to process: %d", len(file_paths))
             
             if not file_paths:
-                logger.warning("no txt files found in date range")
+                logger.warning("no files found in date range")
                 return {"results": [], "total": 0}
         
         finally:
@@ -713,11 +727,11 @@ async def run_batch_async(job_id: str, req: "BatchProcessRequest"):
             target_dates.sort()
             logger.info("batch job %s: found %d date folders", job_id, len(target_dates))
             
-            # Collect all .txt files from target date folders
+            # Collect all files from target date folders (no extension filter)
             file_paths = []
             for date_folder in target_dates:
                 folder_path = f"{req.root_path}/{date_folder}".replace("//", "/")
-                txt_files = client.list_files(folder_path, suffix=".txt")
+                txt_files = client.list_files(folder_path, suffix=None)
                 
                 for filename in txt_files:
                     full_path = f"{folder_path}/{filename}"

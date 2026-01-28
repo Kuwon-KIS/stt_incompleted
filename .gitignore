@@ -10,3 +10,6 @@ _scratch
 .DS_Store
 .vscode
 .idea
+# Build outputs
+output/
+*.tar

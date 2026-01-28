@@ -9,6 +9,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Output 디렉토리 설정
+OUTPUT_DIR="./output"
+
 # 함수: 사용법 출력
 usage() {
     echo -e "${BLUE}사용법:${NC}"
@@ -159,11 +162,13 @@ if eval "$BUILD_CMD"; then
         echo -e "${BLUE}다음 명령어로 이미지를 사용할 수 있습니다:${NC}"
         echo "  docker run $IMAGE"
     elif [ "$SAVE" = true ]; then
-        # TAR 파일로 저장
+        # TAR 파일로 저장 (output 디렉토리)
+        mkdir -p "$OUTPUT_DIR"
         TAR_FILENAME="${REPOSITORY##*/}-${TAG}.tar"
+        TAR_FILEPATH="$OUTPUT_DIR/$TAR_FILENAME"
         echo -e "${YELLOW}TAR 파일로 저장 중...${NC}"
-        docker save -o "$TAR_FILENAME" "$IMAGE"
-        TAR_SIZE=$(du -h "$TAR_FILENAME" | awk '{print $1}')
+        docker save -o "$TAR_FILEPATH" "$IMAGE"
+        TAR_SIZE=$(du -h "$TAR_FILEPATH" | awk '{print $1}')
         echo ""
         echo -e "${GREEN}✓ 이미지가 TAR 파일로 저장되었습니다.${NC}"
         echo -e "${GREEN}파일명:${NC} $TAR_FILENAME"
@@ -173,7 +178,7 @@ if eval "$BUILD_CMD"; then
         echo "  docker load -i $TAR_FILENAME"
         echo ""
         echo -e "${BLUE}현재 위치:${NC}"
-        echo "  $(pwd)/$TAR_FILENAME"
+        echo "  $(pwd)/$TAR_FILEPATH"
     else
         echo -e "${YELLOW}주의: --load 옵션으로 빌드되어 로컬에서만 사용 가능합니다.${NC}"
         echo "      여러 아키텍처를 지원하려면 --push 옵션으로 레지스트리에 푸시하세요.${NC}"

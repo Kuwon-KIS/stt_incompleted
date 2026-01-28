@@ -8,10 +8,16 @@
 .
 ├── Dockerfile                 # Python 3.10.19-slim-trixie 기반 컨테이너 이미지
 ├── build.sh                   # Docker buildx를 사용한 멀티 아키텍처 빌드 스크립트
-├── requirements               # Python 종속성 (fastapi, uvicorn, paramiko, requests)
+├── test_local.sh              # 로컬 환경 테스트 스크립트
+├── test_remote.sh             # 배포 후 원격 서버 테스트 스크립트
+├── requirements.txt           # Python 종속성 (fastapi, uvicorn, paramiko, requests)
 ├── app/
 │   ├── main.py               # FastAPI 애플리케이션 및 엔드포인트
-│   └── sftp_client.py        # Paramiko 기반 SFTP 클라이언트
+│   ├── sftp_client.py        # Paramiko 기반 SFTP 클라이언트
+│   ├── config.example.py     # 설정 파일 예제
+│   └── templates/            # Prompt 템플릿 디렉토리
+│       ├── qwen_default.tmpl # Qwen API 호출용 기본 템플릿
+│       └── generic.tmpl      # Agent API 호출용 일반 템플릿
 └── README.md                 # 이 파일
 ```
 
@@ -217,6 +223,50 @@ docker build -t stt-fastapi-sftp /Users/a113211/workspace/stt_incompleted
 
 ```bash
 docker run --rm -d --name stt_fastapi_sftp -p 8002:8002 stt-fastapi-sftp
+```
+
+## 테스트
+
+### 로컬 테스트 (개발 환경)
+
+로컬에서 빌드부터 테스트까지 자동으로 수행하는 스크립트:
+
+```bash
+chmod +x test_local.sh
+./test_local.sh
+```
+
+이 스크립트는 다음을 수행합니다:
+1. Docker 이미지 빌드
+2. 컨테이너 실행
+3. 헬스 체크
+4. 템플릿 로드 확인
+5. qwen_default 템플릿 테스트
+6. generic 템플릿 테스트
+7. Template 없이 raw text 테스트
+8. 한글 Unicode 처리 테스트
+
+### 배포 후 테스트 (운영 환경)
+
+배포된 서버에서 테스트하는 스크립트:
+
+```bash
+chmod +x test_remote.sh
+./test_remote.sh
+```
+
+또는 커스텀 호스트/포트로 테스트:
+
+```bash
+SERVICE_HOST=example.com SERVICE_PORT=8080 ./test_remote.sh
+```
+
+환경변수로 미리 설정:
+
+```bash
+export SERVICE_HOST=your-server.com
+export SERVICE_PORT=8080
+./test_remote.sh
 ```
 
 ## API 엔드포인트 및 예시

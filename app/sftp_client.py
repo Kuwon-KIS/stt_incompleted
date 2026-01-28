@@ -69,9 +69,11 @@ class SFTPClient:
         if not self.sftp:
             raise RuntimeError("SFTP connection not established")
         logger.debug("Reading remote file %s", remote_path)
-        with self.sftp.open(remote_path, "r") as f:
+        with self.sftp.open(remote_path, "rb") as f:
             data = f.read()
-        return data if isinstance(data, str) else data.decode(encoding)
+        if isinstance(data, bytes):
+            return data.decode(encoding, errors='replace')
+        return str(data)
 
     def list_files(self, path: str, suffix: str = None) -> List[str]:
         """List all files in a directory, optionally filtered by suffix.
@@ -136,9 +138,6 @@ class SFTPClient:
         except FileNotFoundError:
             logger.warning("Directory not found: %s", path)
             return []
-            if isinstance(data, bytes):
-                return data.decode(encoding)
-            return str(data)
 
     def close(self):
         try:
