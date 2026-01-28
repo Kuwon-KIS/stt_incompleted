@@ -12,16 +12,17 @@ NC='\033[0m' # No Color
 # 함수: 사용법 출력
 usage() {
     echo -e "${BLUE}사용법:${NC}"
-    echo "  ./build.sh <repository> [tag] [--push]"
+    echo "  ./build.sh <repository> [tag] [--push|--save]"
     echo ""
     echo -e "${BLUE}예시:${NC}"
     echo "  ./build.sh docker.io/username/myapp latest --push"
-    echo "  ./build.sh ghcr.io/username/myapp v1.0.0 --push"
+    echo "  ./build.sh ghcr.io/username/myapp v1.0.0 --save"
     echo ""
     echo -e "${BLUE}옵션:${NC}"
     echo "  repository  : Docker 레지스트리 주소 (필수)"
     echo "  tag         : 이미지 태그 (기본값: latest)"
     echo "  --push      : 빌드 후 레지스트리에 푸시 (선택사항)"
+    echo "  --save      : 빌드 후 tar 파일로 저장 (선택사항, Linux 서버 전송용)"
     echo ""
     echo -e "${BLUE}환경변수 (docker run 시 설정):${NC}"
     echo "  APP_ENV              : production 또는 development (기본값: production)"
@@ -60,10 +61,14 @@ fi
 REPOSITORY=$1
 TAG=${2:-latest}
 PUSH=false
+SAVE=false
 
-# --push 옵션 확인
+# --push 또는 --save 옵션 확인
 if [ "$2" = "--push" ] || [ "$3" = "--push" ]; then
     PUSH=true
+fi
+if [ "$2" = "--save" ] || [ "$3" = "--save" ]; then
+    SAVE=true
 fi
 
 IMAGE="${REPOSITORY}:${TAG}"
@@ -75,6 +80,7 @@ echo -e "${GREEN}Repository:${NC} $REPOSITORY"
 echo -e "${GREEN}Tag:${NC} $TAG"
 echo -e "${GREEN}Full Image:${NC} $IMAGE"
 echo -e "${GREEN}Push:${NC} $([[ $PUSH == true ]] && echo "Yes" || echo "No")"
+echo -e "${GREEN}Save as TAR:${NC} $([[ $SAVE == true ]] && echo "Yes" || echo "No")"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -112,6 +118,11 @@ if [ "$PUSH" = true ]; then
   -t $IMAGE \
   --push"
     echo -e "${YELLOW}빌드 및 푸시 시작 (멀티플랫폼)...${NC}"
+elif [ "$SAVE" = true ]; then
+    # TAR 파일로 저장: 단일 플랫폼 (호스트 아키텍처)
+    BUILD_CMD="docker build \
+  -t $IMAGE"
+    echo -e "${YELLOW}빌드를 진행 중... (TAR 파일로 저장하기 위해 로컬 빌드)${NC}"
 else
     # 로컬 저장: 단일 플랫폼 (호스트 아키텍처)
     BUILD_CMD="docker build \
@@ -139,6 +150,22 @@ if eval "$BUILD_CMD"; then
         echo ""
         echo -e "${BLUE}다음 명령어로 이미지를 사용할 수 있습니다:${NC}"
         echo "  docker run $IMAGE"
+    elif [ "$SAVE" = true ]; then
+        # TAR 파일로 저장
+        TAR_FILENAME="${REPOSITORY##*/}-${TAG}.tar"
+        echo -e "${YELLOW}TAR 파일로 저장 중...${NC}"
+        docker save -o "$TAR_FILENAME" "$IMAGE"
+        TAR_SIZE=$(du -h "$TAR_FILENAME" | awk '{print $1}')
+        echo ""
+        echo -e "${GREEN}✓ 이미지가 TAR 파일로 저장되었습니다.${NC}"
+        echo -e "${GREEN}파일명:${NC} $TAR_FILENAME"
+        echo -e "${GREEN}파일크기:${NC} $TAR_SIZE"
+        echo ""
+        echo -e "${BLUE}Linux 서버에서 로드하는 방법:${NC}"
+        echo "  docker load -i $TAR_FILENAME"
+        echo ""
+        echo -e "${BLUE}현재 위치:${NC}"
+        echo "  $(pwd)/$TAR_FILENAME"
     else
         echo -e "${YELLOW}주의: --load 옵션으로 빌드되어 로컬에서만 사용 가능합니다.${NC}"
         echo "      여러 아키텍처를 지원하려면 --push 옵션으로 레지스트리에 푸시하세요.${NC}"
@@ -148,6 +175,9 @@ if eval "$BUILD_CMD"; then
         echo ""
         echo -e "${BLUE}로컬 저장 없이 레지스트리에 푸시하려면:${NC}"
         echo "  ./build.sh $REPOSITORY $TAG --push"
+        echo ""
+        echo -e "${BLUE}TAR 파일로 저장하여 다른 서버에 전송하려면:${NC}"
+        echo "  ./build.sh $REPOSITORY $TAG --save"
     fi
 else
     echo ""
