@@ -20,10 +20,12 @@ env_file = pathlib.Path(__file__).parent.parent / ".env"
 if env_file.exists():
     load_dotenv(env_file)
 else:
-    # Fall back to .env.dev or .env.prod based on APP_ENV
-    app_env = os.getenv("APP_ENV", "development")
-    if app_env == "production":
+    # Fall back to .env.local, .env.dev or .env.prod based on APP_ENV
+    app_env = os.getenv("APP_ENV", "dev")
+    if app_env == "prod":
         env_file = pathlib.Path(__file__).parent.parent / ".env.prod"
+    elif app_env == "local":
+        env_file = pathlib.Path(__file__).parent.parent / ".env.local"
     else:
         env_file = pathlib.Path(__file__).parent.parent / ".env.dev"
     
@@ -49,7 +51,7 @@ class Config:
     CALLBACK_AUTH_HEADER = os.getenv("CALLBACK_AUTH_HEADER")
     TEMPLATE_NAME = os.getenv("TEMPLATE_NAME", "qwen_default")
     BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "4"))
-    APP_ENV = os.getenv("APP_ENV", "development")
+    APP_ENV = os.getenv("APP_ENV", "dev")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 config = Config()

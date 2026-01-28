@@ -139,14 +139,14 @@ echo ""
 
 # 빌드 명령어 구성
 if [ "$PUSH" = true ]; then
-    # 레지스트리 푸시: 멀티플랫폼 지원
+    # 레지스트리 푸시: Linux amd64만 지원 (이미지 사이즈 최소화)
     BUILD_CMD="docker buildx build \
   --build-arg ENV=$BUILD_ENV \
-  --platform linux/amd64,linux/arm64 \
+  --platform linux/amd64 \
   -t $IMAGE \
   --push \
   ."
-    echo -e "${YELLOW}빌드 및 푸시 시작 (env=$BUILD_ENV, 멀티플랫폼: linux/amd64,linux/arm64)...${NC}"
+    echo -e "${YELLOW}빌드 및 푸시 시작 (env=$BUILD_ENV, 플랫폼: linux/amd64)...${NC}"
 elif [ "$SAVE" = true ]; then
     # TAR 파일로 저장: linux/amd64로 명시 지정 (buildx 사용)
     BUILD_CMD="docker buildx build \

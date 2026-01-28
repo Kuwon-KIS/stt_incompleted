@@ -17,7 +17,6 @@
 ├── app/
 │   ├── main.py               # FastAPI 애플리케이션 및 엔드포인트
 │   ├── sftp_client.py        # Paramiko 기반 SFTP 클라이언트
-│   ├── config.example.py     # 설정 파일 예제 (레거시)
 │   └── templates/            # Prompt 템플릿 디렉토리
 │       ├── qwen_default.tmpl # Qwen API 호출용 기본 템플릿
 │       └── generic.tmpl      # Agent API 호출용 일반 템플릿
@@ -147,7 +146,7 @@ LOG_LEVEL=INFO
 
 | 변수명 | 설명 | 기본값 | 보안 |
 |--------|------|--------|------|
-| `APP_ENV` | 애플리케이션 환경 | `development` | 공개 |
+| `APP_ENV` | 애플리케이션 환경 | `dev` | 공개 |
 | `APP_HOST` | 바인드 주소 | `0.0.0.0` | 공개 |
 | `APP_PORT` | 포트번호 | `8002` | 공개 |
 | `CALL_TYPE` | LLM 호출 방식 | `vllm` | 공개 |
@@ -443,7 +442,7 @@ curl -sS http://localhost:8002/healthz
 
 ### 2. 단일 파일 처리 (inline_text로 테스트)
 
-최소 요청 (나머지는 config.py에서):
+최소 요청 (나머지는 .env 파일에서):
 
 ```bash
 curl -X POST http://localhost:8002/process \
