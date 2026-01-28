@@ -15,28 +15,28 @@ OUTPUT_DIR="./output"
 # 함수: 사용법 출력
 usage() {
     echo -e "${BLUE}사용법:${NC}"
-    echo "  ./build.sh <repository> [tag] [--env dev|prod] [--push|--save]"
+    echo "  ./build.sh <repository> [tag] [--env local|dev|prod] [--push|--save]"
     echo ""
     echo -e "${BLUE}예시:${NC}"
-    echo "  ./build.sh docker.io/username/myapp latest --env prod --push"
-    echo "  ./build.sh ghcr.io/username/myapp v1.0.0 --env dev --save"
+    echo "  ./build.sh stt-service latest --env local      # Mac 로컬 테스트"
+    echo "  ./build.sh docker.io/username/stt dev --env dev --push  # Linux dev 서버"
+    echo "  ./build.sh docker.io/username/stt prod --env prod --push # Linux prod 서버"
     echo ""
     echo -e "${BLUE}옵션:${NC}"
-    echo "  repository       : Docker 레지스트리 주소 (필수)"
-    echo "  tag              : 이미지 태그 (기본값: latest)"
-    echo "  --env dev|prod   : 빌드 환경 지정 (선택사항)"
-    echo "                     dev  = .env.dev 읽기 (로컬 개발용)"
-    echo "                     prod = .env.prod 읽기 (프로덕션용)"
-    echo "  --push           : 빌드 후 레지스트리에 푸시 (선택사항)"
-    echo "  --save           : 빌드 후 tar 파일로 저장 (선택사항)"
+    echo "  repository           : Docker 레지스트리 주소 (필수)"
+    echo "  tag                  : 이미지 태그 (기본값: latest)"
+    echo "  --env local|dev|prod : 빌드 환경 지정 (선택사항)"
+    echo "                         local = .env.local (Mac 로컬 테스트용)"
+    echo "                         dev   = .env.dev (Linux dev 서버용)"
+    echo "                         prod  = .env.prod (Linux prod 서버용, 기본값)"
+    echo "  --push               : 빌드 후 레지스트리에 푸시 (선택사항)"
+    echo "  --save               : 빌드 후 tar 파일로 저장 (선택사항)"
     echo ""
     echo -e "${BLUE}빌드 시간에 설정이 이미지에 embed됩니다.${NC}"
     echo "  Runtime 시 docker run -e 옵션으로 override할 수 있습니다."
     echo ""
     echo -e "${BLUE}실행 예시 (Runtime override):${NC}"
-    echo "  docker run -e SFTP_PASSWORD=server-password \\"
-    echo "    -e CALLBACK_URL=http://server:3000/callback \\"
-    echo "    docker.io/username/myapp:latest"
+    echo "  docker run --env-file .env.dev -p 8002:8002 stt-service:latest"
     exit 1
 }
 
@@ -72,8 +72,8 @@ while [[ $# -gt 0 ]]; do
         --env)
             shift
             BUILD_ENV="$1"
-            if [[ "$BUILD_ENV" != "dev" && "$BUILD_ENV" != "prod" ]]; then
-                echo -e "${RED}오류: --env는 'dev' 또는 'prod'여야 합니다.${NC}"
+            if [[ "$BUILD_ENV" != "local" && "$BUILD_ENV" != "dev" && "$BUILD_ENV" != "prod" ]]; then
+                echo -e "${RED}오류: --env는 'local', 'dev', 또는 'prod'여야 합니다.${NC}"
                 usage
             fi
             ;;

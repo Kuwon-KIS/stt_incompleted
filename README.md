@@ -8,16 +8,20 @@
 .
 ├── Dockerfile                 # Python 3.10.19-slim-trixie 기반 컨테이너 이미지
 ├── build.sh                   # Docker buildx를 사용한 멀티 아키텍처 빌드 스크립트
+├── .env.local                 # 로컬(Mac) 개발/테스트 환경 설정 (mock 서버)
+├── .env.dev                   # Linux dev 서버 환경 설정
+├── .env.prod                  # Linux prod 서버 환경 설정
 ├── test_local.sh              # 로컬 환경 테스트 스크립트
 ├── test_remote.sh             # 배포 후 원격 서버 테스트 스크립트
 ├── requirements.txt           # Python 종속성 (fastapi, uvicorn, paramiko, requests)
 ├── app/
 │   ├── main.py               # FastAPI 애플리케이션 및 엔드포인트
 │   ├── sftp_client.py        # Paramiko 기반 SFTP 클라이언트
-│   ├── config.example.py     # 설정 파일 예제
+│   ├── config.example.py     # 설정 파일 예제 (레거시)
 │   └── templates/            # Prompt 템플릿 디렉토리
 │       ├── qwen_default.tmpl # Qwen API 호출용 기본 템플릿
 │       └── generic.tmpl      # Agent API 호출용 일반 템플릿
+├── output/                    # 빌드 결과 저장 디렉토리 (TAR 파일, .gitignore 등록)
 └── README.md                 # 이 파일
 ```
 
@@ -62,25 +66,43 @@
 
 ## 설정 (환경변수)
 
-이 프로젝트는 `.env` 파일을 사용하여 환경변수를 관리합니다. **평문 설정을 서버에 노출하지 않기 위해** 빌드 시점에 `.env.dev` 또는 `.env.prod`를 읽고 이미지에 embed하는 방식을 사용합니다.
+이 프로젝트는 `.env` 파일을 사용하여 환경변수를 관리합니다. **세 가지 환경**을 명확히 구분합니다:
+
+- **`.env.local`**: Mac/로컬 머신에서 build & test용 (mock 서버 기반)
+- **`.env.dev`**: Linux dev 서버용 (실제 dev 서버 주소/계정)
+- **`.env.prod`**: Linux prod 서버용 (실제 prod 서버 주소/계정)
 
 ### 설정 방식 개요
 
-**문제점:** `.env` 파일을 런타임에 읽으면 비밀 정보(패스워드, 토큰)가 서버의 평문 파일로 노출됩니다.
-
-**해결책:** 
-1. **Build 시점** (로컬에서): dev/prod 환경을 지정하여 해당 `.env.dev`/`.env.prod`를 읽고 Docker 이미지에 환경변수로 embed
-2. **Runtime 시점** (서버에서): docker run `-e` 옵션으로 필요한 값만 override
+**Workflow:**
+1. **로컬 Mac에서**: `.env.local`을 읽어 Docker 이미지 빌드 & 테스트
+2. **Linux dev 서버**: `.env.dev`로 컨테이너 실행
+3. **Linux prod 서버**: `.env.prod`로 컨테이너 실행
 
 ### 환경변수 우선순위 (높은 순서부터)
 
 1. **Runtime override** (`docker run -e KEY=value`) ← 서버에서 추가 설정
-2. **Build time embed** (이미지에 포함된 환경변수) ← .env.dev/.env.prod에서 읽음
+2. **Build time embed** (이미지에 포함된 환경변수) ← .env.local/dev/prod에서 읽음
 3. **코드 내부 기본값**
 
-### 1. 개발 환경 설정 (.env.dev)
+### 1. 로컬 개발 환경 (.env.local)
 
-로컬 개발용 설정입니다. localhost 서비스를 사용합니다.
+로컬 Mac 머신에서 build 및 test할 때 사용합니다. mock 서버 기반입니다.
+
+```bash
+# 파일 내용 확인
+cat .env.local
+```
+
+`.env.local` 특징:
+- vLLM: `http://localhost:8002/mock/vllm` (mock 사용)
+- SFTP: `localhost:demo` (로컬 테스트)
+- Callback: `http://localhost:8002/mock/callback` (mock 사용)
+- 목적: 로컬에서 실제 외부 서비스 없이 전체 기능 테스트
+
+### 2. Linux Dev 서버 환경 (.env.dev)
+
+Linux dev 서버에 배포할 때 사용합니다. 실제 dev 서버의 주소와 계정을 포함합니다.
 
 ```bash
 # 파일 내용 확인
@@ -90,19 +112,18 @@ cat .env.dev
 `.env.dev` 예시:
 ```bash
 APP_ENV=development
-LLM_URL=http://localhost:8000
-MODEL_PATH=qwen/qwen-7b-chat
-SFTP_HOST=localhost
-SFTP_USERNAME=demo
-SFTP_PASSWORD=password
-CALLBACK_URL=http://localhost:8002/mock/callback
-BATCH_CONCURRENCY=2
-LOG_LEVEL=DEBUG
+LLM_URL=http://vllm-dev:8000          # dev 서버의 vLLM
+SFTP_HOST=sftp-dev.internal           # dev 서버의 SFTP
+SFTP_USERNAME=dev_user
+SFTP_PASSWORD=dev_password
+CALLBACK_URL=http://callback-dev:3000/callback  # dev 콜백 서버
+BATCH_CONCURRENCY=4
+LOG_LEVEL=INFO
 ```
 
-### 2. 프로덕션 환경 설정 (.env.prod)
+### 3. Linux Prod 서버 환경 (.env.prod)
 
-실제 서버 정보를 포함합니다. **이 파일은 Git에 추가하면 안됩니다.**
+Linux prod 서버에 배포할 때 사용합니다. 실제 prod 서버의 주소와 계정을 포함합니다.
 
 ```bash
 # 파일 내용 확인
@@ -112,17 +133,17 @@ cat .env.prod
 `.env.prod` 예시:
 ```bash
 APP_ENV=production
-LLM_URL=http://vllm-server:8000
-LLM_AUTH_HEADER=Bearer your-actual-token
-SFTP_HOST=sftp.example.com
+LLM_URL=http://vllm-prod:8000         # prod 서버의 vLLM
+LLM_AUTH_HEADER=Bearer your-token
+SFTP_HOST=sftp-prod.example.com       # prod 서버의 SFTP
 SFTP_USERNAME=prod_user
 SFTP_PASSWORD=prod_password
-CALLBACK_URL=http://callback-server:3000/callback
+CALLBACK_URL=http://callback-prod:3000/callback  # prod 콜백 서버
 BATCH_CONCURRENCY=8
 LOG_LEVEL=INFO
 ```
 
-### 3. 환경변수 참고표
+### 4. 환경변수 참고표
 
 | 변수명 | 설명 | 기본값 | 보안 |
 |--------|------|--------|------|
@@ -148,23 +169,33 @@ LOG_LEVEL=INFO
 
 ## Docker 빌드 및 배포
 
-### 핵심: Build Time 설정 vs Runtime Override
+### 핵심: Local Build vs Linux Server Deployment
 
-이 프로젝트는 **보안**을 위해 두 단계로 환경변수를 관리합니다:
-
-**1단계: Build Time (로컬에서)** 
-- `.env.dev` 또는 `.env.prod`를 읽어 Docker 이미지에 embed
-- `./build.sh` 사용 시 `--env dev` 또는 `--env prod` 옵션으로 지정
-
-**2단계: Runtime (서버에서)**
-- `docker run -e KEY=VALUE` 옵션으로 필요한 값만 override
-- 더 높은 우선순위로 적용됨
-
-예시:
+**로컬 Mac에서 빌드 및 테스트:**
+```bash
+./build.sh stt-service latest --env local
+./test_local.sh
 ```
-Build Time:     .env.prod의 SFTP_PASSWORD=prod123 → 이미지에 embed
-Runtime:        docker run -e SFTP_PASSWORD=override456 → 우선 적용
-Result:         SFTP_PASSWORD=override456 사용
+
+**Linux 서버에 배포:**
+```bash
+# dev 서버
+docker run --env-file .env.dev -p 8002:8002 stt-service:latest
+
+# prod 서버
+docker run --env-file .env.prod -p 8002:8002 stt-service:latest
+```
+
+또는 빌드 시점에 각각의 이미지를 만들 수 있습니다:
+```bash
+# 로컬 테스트용
+./build.sh stt-service local --env local
+
+# Linux dev 배포용  
+./build.sh docker.io/username/stt-service dev --env dev
+
+# Linux prod 배포용
+./build.sh docker.io/username/stt-service prod --env prod
 ```
 
 ### 빌드 스크립트 사용 (권장)
@@ -186,73 +217,90 @@ docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 ```bash
 chmod +x build.sh
 
-# 방법 1: 로컬에만 빌드 (테스트용)
-./build.sh docker.io/your-username/stt-service latest --env dev
+# 로컬 Mac에서 테스트
+./build.sh stt-service latest --env local
 
-# 방법 2: 레지스트리에 푸시 (멀티 아키텍처)
-./build.sh docker.io/your-username/stt-service latest --env dev --push
+# Linux dev 서버용 이미지 빌드 (레지스트리에 푸시)
+./build.sh docker.io/your-username/stt-service dev --env dev --push
 ```
 
 #### 프로덕션 환경으로 빌드
 
 ```bash
-# 방법 1: 로컬에만 빌드
-./build.sh docker.io/your-username/stt-service v1.0.0 --env prod
-
-# 방법 2: 레지스트리에 푸시
+# 방법 1: 레지스트리에 푸시 (권장)
 ./build.sh docker.io/your-username/stt-service v1.0.0 --env prod --push
 
-# 방법 3: TAR 파일로 저장 (Linux 서버 전송용)
+# 방법 2: TAR 파일로 저장 (Linux 서버 전송용)
 ./build.sh docker.io/your-username/stt-service v1.0.0 --env prod --save
+
+# 방법 3: GitHub Container Registry에 푸시
+./build.sh ghcr.io/your-username/stt-service v1.0.0 --env prod --push
 ```
 
 #### 빌드 스크립트 옵션
 
 ```
-사용법: ./build.sh <repository> [tag] [--env dev|prod] [--push] [--save]
+사용법: ./build.sh <repository> [tag] [--env local|dev|prod] [--push] [--save]
 
 매개변수:
-  <repository>    필수. Docker 레지스트리 주소 (docker.io/username/myapp)
-  [tag]           선택. 이미지 태그, 기본값: latest
-  [--env dev|prod] 선택. 빌드 환경 (dev=.env.dev, prod=.env.prod)
-  [--push]        선택. 빌드 후 레지스트리에 푸시 (멀티 아키텍처 지원)
-  [--save]        선택. 빌드 후 TAR 파일로 저장 (output/ 디렉토리)
+  <repository>      필수. Docker 레지스트리 주소 (docker.io/username/myapp)
+  [tag]             선택. 이미지 태그, 기본값: latest
+  [--env local|dev|prod]  선택. 빌드 환경 지정
+                          local = .env.local (Mac 로컬 테스트용)
+                          dev   = .env.dev (Linux dev 서버용)
+                          prod  = .env.prod (Linux prod 서버용, 기본값)
+  [--push]          선택. 빌드 후 레지스트리에 푸시 (멀티 아키텍처 지원)
+  [--save]          선택. 빌드 후 TAR 파일로 저장 (output/ 디렉토리)
 ```
 
 #### 빌드 예제
 
+**로컬 Mac에서 빌드 및 테스트:**
 ```bash
-# 개발 환경: .env.dev를 읽고 로컬 빌드
-./build.sh docker.io/myusername/stt-service dev --env dev
+# 로컬 개발: .env.local 읽음 (mock 서버 기반)
+./build.sh stt-service latest --env local
+./test_local.sh
+```
 
-# 프로덕션: .env.prod를 읽고 Docker Hub에 푸시
-./build.sh docker.io/myusername/stt-service v1.2.3 --env prod --push
+**Linux 서버 배포용 이미지 빌드:**
+```bash
+# dev 서버용: .env.dev를 읽고 Docker Hub에 푸시
+./build.sh docker.io/myusername/stt-service dev --env dev --push
 
-# GitHub Container Registry에 푸시
-./build.sh ghcr.io/myusername/stt-service v1.0.0 --env prod --push
+# prod 서버용: .env.prod를 읽고 Docker Hub에 푸시
+./build.sh docker.io/myusername/stt-service prod --env prod --push
 
-# TAR 파일로 저장하여 Linux 서버로 전송
+# prod 서버용 TAR 파일 (registry 접근 불가시)
 ./build.sh docker.io/myusername/stt-service latest --env prod --save
-# 결과: output/docker.io-myusername-stt-service-latest.tar
+```
+
+**배포 시나리오:**
+```bash
+# Linux dev 서버
+docker run --env-file .env.dev -p 8002:8002 docker.io/myusername/stt-service:dev
+
+# Linux prod 서버
+docker run --env-file .env.prod -p 8002:8002 docker.io/myusername/stt-service:prod
 ```
 
 ### TAR 파일로 저장하여 서버에 전송
 
-Linux 서버에 직접 배포할 때 사용합니다.
+Registry 접근이 불가능한 환경에서 사용합니다.
 
-**1. 로컬에서 TAR 파일 생성**
+**1. 로컬 Mac에서 TAR 파일 생성**
 
 ```bash
+# prod 환경용 TAR 파일 생성
 ./build.sh myregistry.com/stt-service v1.0.0 --env prod --save
 
 # 결과 파일
-# output/myregistry.com-stt-service-v1.0.0.tar (약 500MB)
+# output/myregistry.com-stt-service-v1.0.0.tar
 ```
 
 **2. Linux 서버로 파일 전송**
 
 ```bash
-scp output/myregistry.com-stt-service-v1.0.0.tar user@remote-server:/path/to/
+scp output/myregistry.com-stt-service-v1.0.0.tar user@prod-server:/path/to/
 ```
 
 **3. 서버에서 이미지 로드 및 실행**
@@ -261,10 +309,9 @@ scp output/myregistry.com-stt-service-v1.0.0.tar user@remote-server:/path/to/
 # 이미지 로드
 docker load -i myregistry.com-stt-service-v1.0.0.tar
 
-# 환경변수 override로 실행 (더 높은 우선순위)
+# .env.prod 파일을 서버에 복사 후 실행
 docker run -d --name stt-service \
-  -e SFTP_PASSWORD=server-specific-password \
-  -e CALLBACK_URL=http://server-callback:3000/result \
+  --env-file .env.prod \
   -p 8002:8002 \
   myregistry.com/stt-service:v1.0.0
 ```

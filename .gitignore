@@ -1,7 +1,9 @@
 # Configuration files
-app/config.py
 .env
 .env.local
+.env.dev
+.env.prod
+
 
 # Python
 .pyc
