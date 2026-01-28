@@ -60,169 +60,281 @@
    - `/mock/vllm`: 테스트용 가짜 vLLM
    - `/mock/callback`: 테스트용 가짜 콜백
 
-## 설정
+## 설정 (환경변수)
 
-### 로컬 설정 파일 (config.py)
+이 프로젝트는 `.env` 파일을 사용하여 환경변수를 관리합니다. **평문 설정을 서버에 노출하지 않기 위해** 빌드 시점에 `.env.dev` 또는 `.env.prod`를 읽고 이미지에 embed하는 방식을 사용합니다.
 
-이 프로젝트는 로컬 설정 파일 `app/config.py`를 지원합니다. 모든 파라미터를 API 요청에 넣을 필요 없이 설정 파일에 기본값을 저장할 수 있습니다.
+### 설정 방식 개요
 
-1. **설정 파일 생성**
+**문제점:** `.env` 파일을 런타임에 읽으면 비밀 정보(패스워드, 토큰)가 서버의 평문 파일로 노출됩니다.
 
-   `app/config.example.py`를 복사하여 `app/config.py`를 생성하세요:
+**해결책:** 
+1. **Build 시점** (로컬에서): dev/prod 환경을 지정하여 해당 `.env.dev`/`.env.prod`를 읽고 Docker 이미지에 환경변수로 embed
+2. **Runtime 시점** (서버에서): docker run `-e` 옵션으로 필요한 값만 override
 
-   ```bash
-   cp app/config.example.py app/config.py
-   ```
+### 환경변수 우선순위 (높은 순서부터)
 
-2. **개발용 또는 프로덕션용 설정**
+1. **Runtime override** (`docker run -e KEY=value`) ← 서버에서 추가 설정
+2. **Build time embed** (이미지에 포함된 환경변수) ← .env.dev/.env.prod에서 읽음
+3. **코드 내부 기본값**
 
-   `app/config.py`를 열어서 `DevelopmentConfig` 또는 `ProductionConfig`에 맞게 수정하세요:
+### 1. 개발 환경 설정 (.env.dev)
 
-   ```python
-   # Development (기본값)
-   class DevelopmentConfig(Config):
-       LLM_URL = "http://localhost:8000"
-       MODEL_PATH = "qwen/qwen-7b-chat"
-       CALLBACK_URL = "http://localhost:8002/mock/callback"
-       SFTP_HOST = "localhost"
-   ```
-
-### 설정 파일 예시
-
-#### 개발용 설정 (config.dev.example.py)
-
-```python
-class DevelopmentConfig:
-    CALL_TYPE = "vllm"
-    LLM_URL = "http://localhost:8000"  # Mock 서버 사용 가능
-    MODEL_PATH = "qwen/qwen-7b-chat"
-    
-    SFTP_HOST = "localhost"
-    SFTP_USERNAME = "demo"
-    SFTP_PASSWORD = "password"
-    
-    CALLBACK_URL = "http://localhost:8002/mock/callback"
-    TEMPLATE_NAME = "qwen_default"
-    BATCH_CONCURRENCY = 2
-
-config = DevelopmentConfig()
-```
-
-#### 프로덕션용 설정 (config.prod.example.py)
-
-```python
-import os
-
-class ProductionConfig:
-    # 모든 설정이 환경변수에서 읽음
-    CALL_TYPE = os.getenv("CALL_TYPE", "vllm")
-    LLM_URL = os.getenv("LLM_URL")  # 필수
-    MODEL_PATH = os.getenv("MODEL_PATH")  # 필수
-    
-    SFTP_HOST = os.getenv("SFTP_HOST")  # 필수
-    SFTP_USERNAME = os.getenv("SFTP_USERNAME")
-    SFTP_PASSWORD = os.getenv("SFTP_PASSWORD")
-    SFTP_KEY = os.getenv("SFTP_KEY")  # 또는 Base64 인코딩된 키
-    
-    CALLBACK_URL = os.getenv("CALLBACK_URL")  # 필수
-    BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "8"))
-
-config = ProductionConfig()
-```
-
-실제 설정 파일 생성:
+로컬 개발용 설정입니다. localhost 서비스를 사용합니다.
 
 ```bash
-# 개발용
-cp app/config.dev.example.py app/config.py
-# 프로덕션용
-cp app/config.prod.example.py app/config.py
+# 파일 내용 확인
+cat .env.dev
 ```
 
-또는 `app/config.example.py`에서 원하는 부분만 복사:
-
+`.env.dev` 예시:
 ```bash
-cp app/config.example.py app/config.py
-vi app/config.py  # 수정
-```
-
-### 환경변수
-
-모든 설정은 환경변수로도 제어할 수 있습니다 (우선순위: 환경변수 > config.py):
-
-```bash
-# LLM 설정
-export CALL_TYPE=vllm                           # "vllm" 또는 "agent"
-export LLM_URL=http://vllm-server:8000
-export LLM_AUTH_HEADER="Bearer token"
-export MODEL_PATH=qwen/qwen-7b-chat             # vLLM 사용 시
-export AGENT_NAME=my-agent                      # Agent 사용 시
-export USE_STREAMING=false
-
-# SFTP 설정
-export SFTP_HOST=sftp.example.com
-export SFTP_PORT=22
-export SFTP_USERNAME=user
-export SFTP_PASSWORD=password
-export SFTP_KEY=/path/to/id_rsa                 # 또는 Base64 인코딩된 키
-export SFTP_ROOT_PATH=/
-
-# 콜백 설정
-export CALLBACK_URL=http://callback-server:3000/callback
-export CALLBACK_AUTH_HEADER="Bearer callback-token"
-
-# 처리 설정
-export TEMPLATE_NAME=qwen_default
-export BATCH_CONCURRENCY=4
-export APP_ENV=development                      # "development" 또는 "production"
-```
-
-### Docker 환경에서 환경변수 사용
-
-```bash
-docker run -d \
-  -e APP_ENV=production \
-  -e CALL_TYPE=vllm \
-  -e LLM_URL=http://vllm-server:8000 \
-  -e MODEL_PATH=qwen/qwen-7b-chat \
-  -e SFTP_HOST=sftp.example.com \
-  -e SFTP_USERNAME=user \
-  -e SFTP_PASSWORD=password \
-  -e CALLBACK_URL=http://callback-server:3000/callback \
-  -e BATCH_CONCURRENCY=8 \
-  -p 8002:8002 \
-  stt-fastapi-sftp
-```
-
-또는 `.env` 파일로:
-
-```bash
-# .env (Git에 저장되지 않음)
-APP_ENV=production
-CALL_TYPE=vllm
-LLM_URL=http://vllm-server:8000
+APP_ENV=development
+LLM_URL=http://localhost:8000
 MODEL_PATH=qwen/qwen-7b-chat
-SFTP_HOST=sftp.example.com
-SFTP_USERNAME=user
+SFTP_HOST=localhost
+SFTP_USERNAME=demo
 SFTP_PASSWORD=password
-CALLBACK_URL=http://callback-server:3000/callback
-
-# 실행
-docker run --env-file .env -p 8002:8002 stt-fastapi-sftp
+CALLBACK_URL=http://localhost:8002/mock/callback
+BATCH_CONCURRENCY=2
+LOG_LEVEL=DEBUG
 ```
 
-## 빌드 및 실행
+### 2. 프로덕션 환경 설정 (.env.prod)
 
-### Docker 빌드
+실제 서버 정보를 포함합니다. **이 파일은 Git에 추가하면 안됩니다.**
 
 ```bash
-docker build -t stt-fastapi-sftp /Users/a113211/workspace/stt_incompleted
+# 파일 내용 확인
+cat .env.prod
+```
+
+`.env.prod` 예시:
+```bash
+APP_ENV=production
+LLM_URL=http://vllm-server:8000
+LLM_AUTH_HEADER=Bearer your-actual-token
+SFTP_HOST=sftp.example.com
+SFTP_USERNAME=prod_user
+SFTP_PASSWORD=prod_password
+CALLBACK_URL=http://callback-server:3000/callback
+BATCH_CONCURRENCY=8
+LOG_LEVEL=INFO
+```
+
+### 3. 환경변수 참고표
+
+| 변수명 | 설명 | 기본값 | 보안 |
+|--------|------|--------|------|
+| `APP_ENV` | 애플리케이션 환경 | `development` | 공개 |
+| `APP_HOST` | 바인드 주소 | `0.0.0.0` | 공개 |
+| `APP_PORT` | 포트번호 | `8002` | 공개 |
+| `CALL_TYPE` | LLM 호출 방식 | `vllm` | 공개 |
+| `LLM_URL` | vLLM 서버 주소 | 없음 | 공개 |
+| `LLM_AUTH_HEADER` | 인증 헤더 | 없음 | **비밀** |
+| `MODEL_PATH` | 모델 경로 (vLLM) | 없음 | 공개 |
+| `AGENT_NAME` | Agent 이름 | 없음 | 공개 |
+| `SFTP_HOST` | SFTP 서버 | 없음 | 공개 |
+| `SFTP_PORT` | SFTP 포트 | `22` | 공개 |
+| `SFTP_USERNAME` | SFTP 사용자명 | 없음 | **비밀** |
+| `SFTP_PASSWORD` | SFTP 비밀번호 | 없음 | **비밀** |
+| `SFTP_KEY` | SSH 개인키 경로 | 없음 | **비밀** |
+| `SFTP_ROOT_PATH` | SFTP 루트 경로 | `/` | 공개 |
+| `CALLBACK_URL` | 콜백 URL | 없음 | 공개 |
+| `CALLBACK_AUTH_HEADER` | 콜백 인증 헤더 | 없음 | **비밀** |
+| `TEMPLATE_NAME` | 기본 템플릿 | `qwen_default` | 공개 |
+| `BATCH_CONCURRENCY` | 배치 동시성 | `4` | 공개 |
+| `LOG_LEVEL` | 로그 레벨 | `INFO` | 공개 |
+
+## Docker 빌드 및 배포
+
+### 핵심: Build Time 설정 vs Runtime Override
+
+이 프로젝트는 **보안**을 위해 두 단계로 환경변수를 관리합니다:
+
+**1단계: Build Time (로컬에서)** 
+- `.env.dev` 또는 `.env.prod`를 읽어 Docker 이미지에 embed
+- `./build.sh` 사용 시 `--env dev` 또는 `--env prod` 옵션으로 지정
+
+**2단계: Runtime (서버에서)**
+- `docker run -e KEY=VALUE` 옵션으로 필요한 값만 override
+- 더 높은 우선순위로 적용됨
+
+예시:
+```
+Build Time:     .env.prod의 SFTP_PASSWORD=prod123 → 이미지에 embed
+Runtime:        docker run -e SFTP_PASSWORD=override456 → 우선 적용
+Result:         SFTP_PASSWORD=override456 사용
+```
+
+### 빌드 스크립트 사용 (권장)
+
+이 프로젝트는 `build.sh` 스크립트를 제공합니다. Docker buildx를 사용하여 `linux/amd64`와 `linux/arm64` 아키텍처를 지원합니다.
+
+#### 사전 요구사항
+
+```bash
+# Docker buildx 설치 확인
+docker buildx version
+
+# 필요한 경우 QEMU 설정 (arm64 빌드용)
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+```
+
+#### 개발 환경으로 빌드
+
+```bash
+chmod +x build.sh
+
+# 방법 1: 로컬에만 빌드 (테스트용)
+./build.sh docker.io/your-username/stt-service latest --env dev
+
+# 방법 2: 레지스트리에 푸시 (멀티 아키텍처)
+./build.sh docker.io/your-username/stt-service latest --env dev --push
+```
+
+#### 프로덕션 환경으로 빌드
+
+```bash
+# 방법 1: 로컬에만 빌드
+./build.sh docker.io/your-username/stt-service v1.0.0 --env prod
+
+# 방법 2: 레지스트리에 푸시
+./build.sh docker.io/your-username/stt-service v1.0.0 --env prod --push
+
+# 방법 3: TAR 파일로 저장 (Linux 서버 전송용)
+./build.sh docker.io/your-username/stt-service v1.0.0 --env prod --save
+```
+
+#### 빌드 스크립트 옵션
+
+```
+사용법: ./build.sh <repository> [tag] [--env dev|prod] [--push] [--save]
+
+매개변수:
+  <repository>    필수. Docker 레지스트리 주소 (docker.io/username/myapp)
+  [tag]           선택. 이미지 태그, 기본값: latest
+  [--env dev|prod] 선택. 빌드 환경 (dev=.env.dev, prod=.env.prod)
+  [--push]        선택. 빌드 후 레지스트리에 푸시 (멀티 아키텍처 지원)
+  [--save]        선택. 빌드 후 TAR 파일로 저장 (output/ 디렉토리)
+```
+
+#### 빌드 예제
+
+```bash
+# 개발 환경: .env.dev를 읽고 로컬 빌드
+./build.sh docker.io/myusername/stt-service dev --env dev
+
+# 프로덕션: .env.prod를 읽고 Docker Hub에 푸시
+./build.sh docker.io/myusername/stt-service v1.2.3 --env prod --push
+
+# GitHub Container Registry에 푸시
+./build.sh ghcr.io/myusername/stt-service v1.0.0 --env prod --push
+
+# TAR 파일로 저장하여 Linux 서버로 전송
+./build.sh docker.io/myusername/stt-service latest --env prod --save
+# 결과: output/docker.io-myusername-stt-service-latest.tar
+```
+
+### TAR 파일로 저장하여 서버에 전송
+
+Linux 서버에 직접 배포할 때 사용합니다.
+
+**1. 로컬에서 TAR 파일 생성**
+
+```bash
+./build.sh myregistry.com/stt-service v1.0.0 --env prod --save
+
+# 결과 파일
+# output/myregistry.com-stt-service-v1.0.0.tar (약 500MB)
+```
+
+**2. Linux 서버로 파일 전송**
+
+```bash
+scp output/myregistry.com-stt-service-v1.0.0.tar user@remote-server:/path/to/
+```
+
+**3. 서버에서 이미지 로드 및 실행**
+
+```bash
+# 이미지 로드
+docker load -i myregistry.com-stt-service-v1.0.0.tar
+
+# 환경변수 override로 실행 (더 높은 우선순위)
+docker run -d --name stt-service \
+  -e SFTP_PASSWORD=server-specific-password \
+  -e CALLBACK_URL=http://server-callback:3000/result \
+  -p 8002:8002 \
+  myregistry.com/stt-service:v1.0.0
 ```
 
 ### 컨테이너 실행
 
+#### 기본 실행 (Build Time 설정 사용)
+
 ```bash
-docker run --rm -d --name stt_fastapi_sftp -p 8002:8002 stt-fastapi-sftp
+# 이미지에 embed된 환경변수 사용
+docker run -d --name stt-service -p 8002:8002 \
+  docker.io/your-username/stt-service:latest
+```
+
+#### Environment Override (권장)
+
+서버별 특정 설정이 필요한 경우, Build Time 설정을 override합니다:
+
+```bash
+docker run -d --name stt-service \
+  -e SFTP_HOST=your-sftp-server.com \
+  -e SFTP_USERNAME=your-sftp-user \
+  -e SFTP_PASSWORD=your-sftp-pass \
+  -e CALLBACK_URL=http://your-callback-server:3000/api/result \
+  -e LLM_AUTH_HEADER="Bearer your-auth-token" \
+  -p 8002:8002 \
+  docker.io/your-username/stt-service:latest
+```
+
+#### docker-compose.yml 사용
+
+```yaml
+version: '3.8'
+
+services:
+  stt-service:
+    image: docker.io/your-username/stt-service:latest
+    ports:
+      - "8002:8002"
+    environment:
+      # Build Time에서 읽은 .env.prod의 값들을 override
+      - SFTP_HOST=production-sftp.example.com
+      - SFTP_PASSWORD=production-password
+      - CALLBACK_URL=http://production-callback:3000/api/result
+    restart: unless-stopped
+```
+
+### 수동 빌드 (빌드 스크립트 미사용)
+
+#### 멀티 아키텍처 빌드
+
+```bash
+# builder 생성 (최초 1회)
+docker buildx create --name multiarch-builder --use
+
+# 프로덕션 설정으로 빌드
+docker buildx build \
+  --build-arg ENV=production \
+  --platform linux/amd64,linux/arm64 \
+  -t docker.io/your-username/stt-service:latest \
+  --push \
+  .
+```
+
+#### 로컬 빌드 (단일 아키텍처, 테스트용)
+
+```bash
+docker build \
+  --build-arg ENV=dev \
+  -t stt-service:dev .
 ```
 
 ## 테스트
@@ -631,131 +743,6 @@ curl -X POST http://localhost:8002/process \
     "template_name": "qwen_default",
     "question": "Summarize the key points from this article."
   }'
-```
-
-## Docker 빌드 및 배포
-
-### 빌드 스크립트 사용 (권장)
-
-이 프로젝트는 `build.sh` 스크립트를 제공합니다. 이 스크립트는 Docker buildx를 사용하여 `linux/amd64`와 `linux/arm64` 아키텍처 모두를 지원하는 이미지를 빌드합니다.
-
-#### 사전 요구사항
-
-```bash
-# Docker buildx가 설치되어 있어야 합니다
-docker buildx version
-
-# 필요한 경우 qemu 설정
-docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-```
-
-#### 사용 방법
-
-**1. 로컬에서만 빌드 (단일 아키텍처)**
-```bash
-chmod +x build.sh
-./build.sh docker.io/your-username/stt-service latest
-```
-
-**2. 레지스트리에 직접 푸시 (권장, 멀티 아키텍처 지원)**
-```bash
-./build.sh docker.io/your-username/stt-service latest --push
-```
-
-**3. TAR 파일로 저장 (Linux 서버 전송용)**
-```bash
-./build.sh docker.io/your-username/stt-service latest --save
-```
-
-이 옵션은 이미지를 `{레지스트리명}-{태그}.tar` 파일로 저장합니다. 생성된 TAR 파일을 Linux 서버로 전송한 후 다음 명령어로 로드할 수 있습니다:
-
-```bash
-docker load -i docker.io-your-username-stt-service-latest.tar
-```
-
-**4. 커스텀 태그로 빌드 및 푸시**
-```bash
-./build.sh ghcr.io/your-username/stt-service v1.0.0 --push
-```
-
-#### 스크립트 옵션
-
-- `repository` (필수): Docker 레지스트리 주소 (예: `docker.io/username/myapp`)
-- `tag` (선택): 이미지 태그, 기본값은 `latest`
-- `--push`: 빌드 완료 후 레지스트리에 푸시 (멀티 아키텍처 지원)
-- `--save`: 빌드 후 TAR 파일로 저장 (다른 서버로 전송 가능)
-
-#### 예제
-
-```bash
-# 로컬 빌드
-./build.sh docker.io/myusername/stt-service latest
-
-# Docker Hub에 푸시
-./build.sh docker.io/myusername/stt-service latest --push
-
-# GitHub Container Registry에 푸시
-./build.sh ghcr.io/myusername/stt-service v1.0.0 --push
-
-# 특정 버전으로 빌드 및 푸시
-./build.sh registry.example.com/myapp/stt-service 2026-01-27 --push
-
-# TAR 파일로 저장 (Linux 서버 전송용)
-./build.sh docker.io/myusername/stt-service latest --save
-```
-
-#### TAR 파일로 저장하여 서버에 전송하기
-
-1. **로컬에서 TAR 파일 생성**
-```bash
-./build.sh myregistry.com/stt-service v1.0.0 --save
-# 결과: myregistry.com-stt-service-v1.0.0.tar
-```
-
-2. **Linux 서버로 파일 전송**
-```bash
-scp myregistry.com-stt-service-v1.0.0.tar user@remote-server:/path/to/
-```
-
-3. **서버에서 이미지 로드**
-```bash
-docker load -i myregistry.com-stt-service-v1.0.0.tar
-docker run -e APP_ENV=production ... myregistry.com/stt-service:v1.0.0
-```
-
-### 수동 빌드 (빌드 스크립트 미사용)
-
-#### 멀티 아키텍처 빌드
-
-```bash
-# builder 생성 (최초 1회)
-docker buildx create --name multiarch-builder --use
-
-# 빌드 및 푸시
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t docker.io/your-username/stt-service:latest \
-  --push \
-  .
-```
-
-#### 로컬 빌드 (단일 아키텍처)
-
-```bash
-docker build -t stt-service:latest .
-```
-
-### 이미지 실행
-
-```bash
-# 기본 실행
-docker run -p 8002:8002 docker.io/your-username/stt-service:latest
-
-# 환경변수와 함께 실행
-docker run -p 8002:8002 \
-  -e SFTP_USERNAME=your-user \
-  -e SFTP_PASSWORD=your-pass \
-  docker.io/your-username/stt-service:latest
 ```
 
 ## 주의사항

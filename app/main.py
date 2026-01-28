@@ -12,31 +12,50 @@ from typing import List, Dict, Any
 import uuid
 from .sftp_client import SFTPClient
 
-# Load configuration (try config.py first, fall back to defaults)
-try:
-    from .config import config
-    logger_init = logging.getLogger(__name__)
-    logger_init.info("loaded configuration from app/config.py")
-except ImportError:
-    # No config.py found, use defaults
-    class config:
-        CALL_TYPE = "vllm"
-        LLM_URL = None
-        LLM_AUTH_HEADER = None
-        MODEL_PATH = None
-        AGENT_NAME = None
-        USE_STREAMING = False
-        SFTP_HOST = None
-        SFTP_PORT = 22
-        SFTP_USERNAME = None
-        SFTP_PASSWORD = None
-        SFTP_KEY = None
-        SFTP_CREDENTIAL_NAME = None
-        SFTP_ROOT_PATH = "/"
-        CALLBACK_URL = None
-        CALLBACK_AUTH_HEADER = None
-        TEMPLATE_NAME = None
-        BATCH_CONCURRENCY = 4
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+# Load .env file if it exists
+env_file = pathlib.Path(__file__).parent.parent / ".env"
+if env_file.exists():
+    load_dotenv(env_file)
+else:
+    # Fall back to .env.dev or .env.prod based on APP_ENV
+    app_env = os.getenv("APP_ENV", "development")
+    if app_env == "production":
+        env_file = pathlib.Path(__file__).parent.parent / ".env.prod"
+    else:
+        env_file = pathlib.Path(__file__).parent.parent / ".env.dev"
+    
+    if env_file.exists():
+        load_dotenv(env_file)
+
+# Configuration from environment variables
+class Config:
+    CALL_TYPE = os.getenv("CALL_TYPE", "vllm")
+    LLM_URL = os.getenv("LLM_URL")
+    LLM_AUTH_HEADER = os.getenv("LLM_AUTH_HEADER")
+    MODEL_PATH = os.getenv("MODEL_PATH")
+    AGENT_NAME = os.getenv("AGENT_NAME")
+    USE_STREAMING = os.getenv("USE_STREAMING", "false").lower() == "true"
+    SFTP_HOST = os.getenv("SFTP_HOST")
+    SFTP_PORT = int(os.getenv("SFTP_PORT", "22"))
+    SFTP_USERNAME = os.getenv("SFTP_USERNAME")
+    SFTP_PASSWORD = os.getenv("SFTP_PASSWORD")
+    SFTP_KEY = os.getenv("SFTP_KEY")
+    SFTP_CREDENTIAL_NAME = os.getenv("SFTP_CREDENTIAL_NAME")
+    SFTP_ROOT_PATH = os.getenv("SFTP_ROOT_PATH", "/")
+    CALLBACK_URL = os.getenv("CALLBACK_URL")
+    CALLBACK_AUTH_HEADER = os.getenv("CALLBACK_AUTH_HEADER")
+    TEMPLATE_NAME = os.getenv("TEMPLATE_NAME", "qwen_default")
+    BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "4"))
+    APP_ENV = os.getenv("APP_ENV", "development")
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+config = Config()
+
+logger_init = logging.getLogger(__name__)
+logger_init.info("loaded configuration from environment variables (APP_ENV=%s)", config.APP_ENV)
 
 logger = logging.getLogger(__name__)
 # improve log format with timestamp

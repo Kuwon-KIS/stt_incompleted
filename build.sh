@@ -15,43 +15,28 @@ OUTPUT_DIR="./output"
 # 함수: 사용법 출력
 usage() {
     echo -e "${BLUE}사용법:${NC}"
-    echo "  ./build.sh <repository> [tag] [--push|--save]"
+    echo "  ./build.sh <repository> [tag] [--env dev|prod] [--push|--save]"
     echo ""
     echo -e "${BLUE}예시:${NC}"
-    echo "  ./build.sh docker.io/username/myapp latest --push"
-    echo "  ./build.sh ghcr.io/username/myapp v1.0.0 --save"
+    echo "  ./build.sh docker.io/username/myapp latest --env prod --push"
+    echo "  ./build.sh ghcr.io/username/myapp v1.0.0 --env dev --save"
     echo ""
     echo -e "${BLUE}옵션:${NC}"
-    echo "  repository  : Docker 레지스트리 주소 (필수)"
-    echo "  tag         : 이미지 태그 (기본값: latest)"
-    echo "  --push      : 빌드 후 레지스트리에 푸시 (선택사항)"
-    echo "  --save      : 빌드 후 tar 파일로 저장 (선택사항, Linux 서버 전송용)"
+    echo "  repository       : Docker 레지스트리 주소 (필수)"
+    echo "  tag              : 이미지 태그 (기본값: latest)"
+    echo "  --env dev|prod   : 빌드 환경 지정 (선택사항)"
+    echo "                     dev  = .env.dev 읽기 (로컬 개발용)"
+    echo "                     prod = .env.prod 읽기 (프로덕션용)"
+    echo "  --push           : 빌드 후 레지스트리에 푸시 (선택사항)"
+    echo "  --save           : 빌드 후 tar 파일로 저장 (선택사항)"
     echo ""
-    echo -e "${BLUE}환경변수 (docker run 시 설정):${NC}"
-    echo "  APP_ENV              : production 또는 development (기본값: production)"
-    echo "  CALL_TYPE            : vllm 또는 agent (기본값: vllm)"
-    echo "  LLM_URL              : vLLM/Agent 서버 주소"
-    echo "  LLM_AUTH_HEADER      : 인증 헤더 (예: Bearer token)"
-    echo "  MODEL_PATH           : vLLM 모델 경로 (예: qwen/qwen-7b-chat)"
-    echo "  AGENT_NAME           : Agent 이름"
-    echo "  USE_STREAMING        : true/false"
-    echo "  SFTP_HOST            : SFTP 서버 주소"
-    echo "  SFTP_PORT            : SFTP 포트 (기본값: 22)"
-    echo "  SFTP_USERNAME        : SFTP 사용자명"
-    echo "  SFTP_PASSWORD        : SFTP 비밀번호"
-    echo "  SFTP_KEY             : SSH 개인키 (파일 경로 또는 Base64)"
-    echo "  SFTP_ROOT_PATH       : SFTP 루트 경로"
-    echo "  CALLBACK_URL         : 콜백 URL"
-    echo "  TEMPLATE_NAME        : 프롬프트 템플릿 이름"
-    echo "  BATCH_CONCURRENCY    : 병렬 처리 개수 (기본값: 4)"
+    echo -e "${BLUE}빌드 시간에 설정이 이미지에 embed됩니다.${NC}"
+    echo "  Runtime 시 docker run -e 옵션으로 override할 수 있습니다."
     echo ""
-    echo -e "${BLUE}실행 예시 (환경변수 설정):${NC}"
-    echo "  docker run -e APP_ENV=production \\"
-    echo "    -e LLM_URL=http://vllm-server:8000 \\"
-    echo "    -e MODEL_PATH=qwen/qwen-7b-chat \\"
-    echo "    -e SFTP_HOST=sftp.example.com \\"
-    echo "    -e CALLBACK_URL=http://callback-server:3000/callback \\"
-    echo "    $IMAGE"
+    echo -e "${BLUE}실행 예시 (Runtime override):${NC}"
+    echo "  docker run -e SFTP_PASSWORD=server-password \\"
+    echo "    -e CALLBACK_URL=http://server:3000/callback \\"
+    echo "    docker.io/username/myapp:latest"
     exit 1
 }
 
@@ -65,13 +50,44 @@ REPOSITORY=$1
 TAG=${2:-latest}
 PUSH=false
 SAVE=false
+BUILD_ENV="prod"  # 기본값: 프로덕션
 
-# --push 또는 --save 옵션 확인
-if [ "$2" = "--push" ] || [ "$3" = "--push" ]; then
-    PUSH=true
+# 인자 파싱 (shift로 REPOSITORY와 TAG 제거 후 처리)
+shift || true
+if [[ "$1" =~ ^[0-9a-zA-Z.-]+$ ]] && [[ ! "$1" =~ ^-- ]]; then
+    # tag로 보이는 인자
+    TAG="$1"
+    shift || true
 fi
-if [ "$2" = "--save" ] || [ "$3" = "--save" ]; then
-    SAVE=true
+
+# 옵션 파싱
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --push)
+            PUSH=true
+            ;;
+        --save)
+            SAVE=true
+            ;;
+        --env)
+            shift
+            BUILD_ENV="$1"
+            if [[ "$BUILD_ENV" != "dev" && "$BUILD_ENV" != "prod" ]]; then
+                echo -e "${RED}오류: --env는 'dev' 또는 'prod'여야 합니다.${NC}"
+                usage
+            fi
+            ;;
+        *)
+            ;;
+    esac
+    shift
+done
+
+# .env 파일 확인
+ENV_FILE=".env.${BUILD_ENV}"
+if [ ! -f "$ENV_FILE" ]; then
+    echo -e "${RED}오류: $ENV_FILE 파일이 없습니다.${NC}"
+    exit 1
 fi
 
 IMAGE="${REPOSITORY}:${TAG}"
@@ -82,6 +98,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${GREEN}Repository:${NC} $REPOSITORY"
 echo -e "${GREEN}Tag:${NC} $TAG"
 echo -e "${GREEN}Full Image:${NC} $IMAGE"
+echo -e "${GREEN}Build Env:${NC} $BUILD_ENV (.env.$BUILD_ENV)"
 echo -e "${GREEN}Push:${NC} $([[ $PUSH == true ]] && echo "Yes" || echo "No")"
 echo -e "${GREEN}Save as TAR:${NC} $([[ $SAVE == true ]] && echo "Yes" || echo "No")"
 echo -e "${BLUE}========================================${NC}"
@@ -124,25 +141,28 @@ echo ""
 if [ "$PUSH" = true ]; then
     # 레지스트리 푸시: 멀티플랫폼 지원
     BUILD_CMD="docker buildx build \
+  --build-arg ENV=$BUILD_ENV \
   --platform linux/amd64,linux/arm64 \
   -t $IMAGE \
   --push \
   ."
-    echo -e "${YELLOW}빌드 및 푸시 시작 (멀티플랫폼: linux/amd64,linux/arm64)...${NC}"
+    echo -e "${YELLOW}빌드 및 푸시 시작 (env=$BUILD_ENV, 멀티플랫폼: linux/amd64,linux/arm64)...${NC}"
 elif [ "$SAVE" = true ]; then
     # TAR 파일로 저장: linux/amd64로 명시 지정 (buildx 사용)
     BUILD_CMD="docker buildx build \
+  --build-arg ENV=$BUILD_ENV \
   --platform linux/amd64 \
   --load \
   -t $IMAGE \
   ."
-    echo -e "${YELLOW}빌드를 진행 중... (TAR 파일 저장용, linux/amd64 플랫폼)${NC}"
+    echo -e "${YELLOW}빌드를 진행 중... (env=$BUILD_ENV, TAR 파일 저장용, linux/amd64 플랫폼)${NC}"
 else
     # 로컬 저장: 호스트 아키텍처로 빌드
     BUILD_CMD="docker build \
+  --build-arg ENV=$BUILD_ENV \
   -t $IMAGE \
   ."
-    echo -e "${YELLOW}빌드만 진행 중... (로컬 저장, 호스트 아키텍처)${NC}"
+    echo -e "${YELLOW}빌드만 진행 중... (env=$BUILD_ENV, 로컬 저장, 호스트 아키텍처)${NC}"
 fi
 
 echo -e "${BLUE}실행 명령:${NC}"
