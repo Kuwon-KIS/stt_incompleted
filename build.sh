@@ -99,15 +99,22 @@ echo ""
 BUILDER_NAME="multiarch-builder"
 echo -e "${YELLOW}Builder 설정 중...${NC}"
 
-if docker buildx ls | grep -q "^$BUILDER_NAME "; then
+if docker buildx ls 2>/dev/null | grep -q "^$BUILDER_NAME "; then
     echo -e "${GREEN}✓ 기존 builder '$BUILDER_NAME' 사용${NC}"
+    docker buildx use "$BUILDER_NAME" 2>/dev/null || true
 else
     echo -e "${YELLOW}새로운 builder '$BUILDER_NAME' 생성 중...${NC}"
-    docker buildx create --name "$BUILDER_NAME" --use
-    echo -e "${GREEN}✓ Builder 생성 완료${NC}"
+    # 기존에 부분적으로 존재하는 builder 제거 시도
+    docker buildx rm "$BUILDER_NAME" 2>/dev/null || true
+    sleep 1
+    # 새로운 builder 생성
+    docker buildx create --name "$BUILDER_NAME" --use 2>/dev/null || {
+        # 실패 시 --append 옵션으로 재시도
+        echo -e "${YELLOW}--append 옵션으로 재시도 중...${NC}"
+        docker buildx create --append --name "$BUILDER_NAME" --use || true
+    }
+    echo -e "${GREEN}✓ Builder 설정 완료${NC}"
 fi
-
-docker buildx use "$BUILDER_NAME"
 echo ""
 
 # 빌드 명령어 구성
@@ -116,26 +123,27 @@ if [ "$PUSH" = true ]; then
     BUILD_CMD="docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -t $IMAGE \
-  --push"
-    echo -e "${YELLOW}빌드 및 푸시 시작 (멀티플랫폼)...${NC}"
+  --push \
+  ."
+    echo -e "${YELLOW}빌드 및 푸시 시작 (멀티플랫폼: linux/amd64,linux/arm64)...${NC}"
 elif [ "$SAVE" = true ]; then
-    # TAR 파일로 저장: 단일 플랫폼 (호스트 아키텍처)
-    BUILD_CMD="docker build \
-  -t $IMAGE"
-    echo -e "${YELLOW}빌드를 진행 중... (TAR 파일로 저장하기 위해 로컬 빌드)${NC}"
+    # TAR 파일로 저장: linux/amd64로 명시 지정 (buildx 사용)
+    BUILD_CMD="docker buildx build \
+  --platform linux/amd64 \
+  --load \
+  -t $IMAGE \
+  ."
+    echo -e "${YELLOW}빌드를 진행 중... (TAR 파일 저장용, linux/amd64 플랫폼)${NC}"
 else
-    # 로컬 저장: 단일 플랫폼 (호스트 아키텍처)
+    # 로컬 저장: 호스트 아키텍처로 빌드
     BUILD_CMD="docker build \
-  -t $IMAGE"
-    echo -e "${YELLOW}빌드만 진행 중... (로컬 저장, 단일 플랫폼)${NC}"
-fi
-
-if [ "$PUSH" != true ]; then
-    BUILD_CMD="$BUILD_CMD ."
+  -t $IMAGE \
+  ."
+    echo -e "${YELLOW}빌드만 진행 중... (로컬 저장, 호스트 아키텍처)${NC}"
 fi
 
 echo -e "${BLUE}실행 명령:${NC}"
-echo "$BUILD_CMD ."
+echo "$BUILD_CMD"
 echo ""
 
 # 빌드 실행
