@@ -16,8 +16,8 @@ RUN apt-get update \
        openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements /app/
+RUN pip install --no-cache-dir -r requirements
 
 COPY ./app /app/app
 

@@ -8,7 +8,7 @@
 .
 ├── Dockerfile                 # Python 3.10.19-slim-trixie 기반 컨테이너 이미지
 ├── build.sh                   # Docker buildx를 사용한 멀티 아키텍처 빌드 스크립트
-├── requirements.txt           # Python 종속성 (fastapi, uvicorn, paramiko, requests)
+├── requirements               # Python 종속성 (fastapi, uvicorn, paramiko, requests)
 ├── app/
 │   ├── main.py               # FastAPI 애플리케이션 및 엔드포인트
 │   └── sftp_client.py        # Paramiko 기반 SFTP 클라이언트
@@ -556,9 +556,9 @@ app/
 ├── main.py
 ├── sftp_client.py
 └── templates/
-    ├── qwen_default.txt
+    ├── qwen_default
     ├── gpt4mini_default.txt
-    └── generic.txt
+    └── generic
 ```
 
 각 템플릿은 `{text}`와 `{question}` 플레이스홀더를 포함할 수 있습니다:
