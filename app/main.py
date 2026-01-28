@@ -356,7 +356,7 @@ def process_sync(req: ProcessRequest) -> dict:
         if not req.agent_name:
             raise ValueError("agent_name is required for agent call_type")
         
-        agent_url = f"{req.llm_url}/v2_2/api/agent/{req.agent_name}/messages"
+        agent_url = req.llm_url
         llm_payload = {
             "use_streaming": req.use_streaming,
             "parameters": {
@@ -370,7 +370,7 @@ def process_sync(req: ProcessRequest) -> dict:
         if not req.model_path:
             raise ValueError("model_path is required for vllm call_type")
         
-        vllm_url = f"{req.llm_url}/v1/chat/completions"
+        vllm_url = req.llm_url
         llm_payload = {
             "model": req.model_path,
             "messages": [

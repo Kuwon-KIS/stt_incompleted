@@ -13,6 +13,24 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# jq 가용성 확인
+if command -v jq &> /dev/null; then
+    HAS_JQ=true
+    echo -e "${GREEN}✓ jq detected - JSON formatting enabled${NC}"
+else
+    HAS_JQ=false
+    echo -e "${YELLOW}⚠ jq not found - raw JSON output will be displayed${NC}"
+fi
+
+# JSON 포맷팅 헬퍼 함수
+format_json() {
+    if [ "$HAS_JQ" = true ]; then
+        jq .
+    else
+        cat
+    fi
+}
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}STT Service Testing Script${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -32,17 +50,17 @@ echo -e "${GREEN}✓ 컨테이너 시작 완료${NC}"
 
 # ===== Step 3: 헬스 체크 =====
 echo -e "\n${YELLOW}[Step 3] 헬스 체크${NC}"
-curl -s http://localhost:8002/healthz | jq .
+curl -s http://localhost:8002/healthz | format_json
 echo -e "${GREEN}✓ 서버 정상${NC}"
 
 # ===== Step 4: 템플릿 목록 확인 =====
 echo -e "\n${YELLOW}[Step 4] 로드된 템플릿 목록 확인${NC}"
-curl -s http://localhost:8002/templates | jq .
+curl -s http://localhost:8002/templates | format_json
 echo -e "${GREEN}✓ 템플릿 로드 확인${NC}"
 
 # ===== Step 5: qwen_default 템플릿 내용 확인 =====
 echo -e "\n${YELLOW}[Step 5] qwen_default 템플릿 조회${NC}"
-curl -s http://localhost:8002/templates/qwen_default | jq .
+curl -s http://localhost:8002/templates/qwen_default | format_json
 echo -e "${GREEN}✓ 템플릿 조회 완료${NC}"
 
 # ===== Step 6: qwen_default 템플릿으로 테스트 =====
@@ -57,7 +75,7 @@ curl -X POST http://localhost:8002/process \
     "model_path": "qwen/qwen-7b-chat",
     "llm_url": "http://127.0.0.1:8002/mock/vllm",
     "callback_url": "http://127.0.0.1:8002/mock/callback"
-  }' 2>/dev/null | jq .
+  }' 2>/dev/null | format_json
 echo -e "${GREEN}✓ qwen_default 템플릿 테스트 완료${NC}"
 
 # ===== Step 7: generic 템플릿으로 테스트 =====
@@ -72,7 +90,7 @@ curl -X POST http://localhost:8002/process \
     "model_path": "qwen/qwen-7b-chat",
     "llm_url": "http://127.0.0.1:8002/mock/vllm",
     "callback_url": "http://127.0.0.1:8002/mock/callback"
-  }' 2>/dev/null | jq .
+  }' 2>/dev/null | format_json
 echo -e "${GREEN}✓ generic 템플릿 테스트 완료${NC}"
 
 # ===== Step 8: Template 없이 테스트 =====
@@ -85,7 +103,7 @@ curl -X POST http://localhost:8002/process \
     "model_path": "qwen/qwen-7b-chat",
     "llm_url": "http://127.0.0.1:8002/mock/vllm",
     "callback_url": "http://127.0.0.1:8002/mock/callback"
-  }' 2>/dev/null | jq .
+  }' 2>/dev/null | format_json
 echo -e "${GREEN}✓ Raw text 테스트 완료${NC}"
 
 # ===== Step 9: 한글 텍스트 Unicode 테스트 =====
@@ -100,7 +118,7 @@ curl -X POST http://localhost:8002/process \
     "model_path": "qwen/qwen-7b-chat",
     "llm_url": "http://127.0.0.1:8002/mock/vllm",
     "callback_url": "http://127.0.0.1:8002/mock/callback"
-  }' 2>/dev/null | jq .
+  }' 2>/dev/null | format_json
 echo -e "${GREEN}✓ 한글 테스트 완료${NC}"
 
 # ===== Cleanup =====
