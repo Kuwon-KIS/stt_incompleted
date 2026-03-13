@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STT 불완전판매요소 탐지 시스템</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="navbar-brand">
+                <h1>🎙️ STT 탐지 시스템</h1>
+            </div>
+            <ul class="navbar-menu">
+                <li><a href="#dashboard" class="nav-link active" data-page="dashboard">대시보드</a></li>
+                <li><a href="#batch" class="nav-link" data-page="batch">배치 처리</a></li>
+                <li><a href="#templates" class="nav-link" data-page="templates">템플릿</a></li>
+                <li><a href="#history" class="nav-link" data-page="history">이력</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <section id="dashboard" class="page active">
+                <h2>📊 대시보드</h2>
+                <div class="dashboard-grid">
+                    <!-- Status Cards -->
+                    <div class="card">
+                        <div class="card-title">시스템 상태</div>
+                        <div class="status-indicator" id="system-status">
+                            <span class="status-dot"></span>
+                            <span id="status-text">대기 중</span>
+                        </div>
+                        <div class="status-info" id="status-info">
+                            <div>업타임: <span id="uptime">계산 중...</span></div>
+                            <div>환경: <span id="env">계산 중...</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Jobs -->
+                    <div class="card">
+                        <div class="card-title">최근 작업 (5개)</div>
+                        <div class="recent-jobs" id="recent-jobs">
+                            <p class="empty-state">작업 이력이 없습니다</p>
+                        </div>
+                    </div>
+
+                    <!-- Statistics -->
+                    <div class="card">
+                        <div class="card-title">통계</div>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-label">처리된 파일</div>
+                                <div class="stat-value" id="total-files">0</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">성공</div>
+                                <div class="stat-value success" id="success-count">0</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">실패</div>
+                                <div class="stat-value error" id="error-count">0</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">평균 시간</div>
+                                <div class="stat-value" id="avg-time">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Batch Processing Page -->
+            <section id="batch" class="page">
+                <h2>⚙️ 배치 처리</h2>
+                <div class="batch-container">
+                    <!-- Configuration Form -->
+                    <div class="card">
+                        <div class="card-title">처리 설정</div>
+                        <form id="batch-form" class="form-grid">
+                            <!-- Date Range -->
+                            <div class="form-group">
+                                <label>시작 날짜 (YYYYMMDD)</label>
+                                <input type="text" id="start-date" placeholder="20260301" required>
+                            </div>
+                            <div class="form-group">
+                                <label>종료 날짜 (YYYYMMDD)</label>
+                                <input type="text" id="end-date" placeholder="20260310" required>
+                            </div>
+
+                            <!-- LLM Settings -->
+                            <div class="form-group">
+                                <label>탐지 방식</label>
+                                <select id="call-type" required>
+                                    <option value="vllm">vLLM</option>
+                                    <option value="agent">AI Agent</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>동시 처리 수</label>
+                                <input type="number" id="concurrency" min="1" max="16" value="4">
+                            </div>
+
+                            <!-- Template Selection -->
+                            <div class="form-group">
+                                <label>템플릿</label>
+                                <select id="template-select" required>
+                                    <option value="qwen_default">Qwen 기본</option>
+                                    <option value="generic">일반</option>
+                                </select>
+                            </div>
+
+                            <!-- Additional Question -->
+                            <div class="form-group full-width">
+                                <label>추가 질문</label>
+                                <textarea id="question" placeholder="추가 지시사항이 있으면 입력하세요..." rows="3"></textarea>
+                            </div>
+
+                            <!-- Submit Buttons -->
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">처리 시작</button>
+                                <button type="reset" class="btn btn-secondary">초기화</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Progress and Results -->
+                    <div class="card">
+                        <div class="card-title">처리 진행 상황</div>
+                        <div id="progress-container" class="progress-container" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progress-fill"></div>
+                            </div>
+                            <div class="progress-text">
+                                <span id="progress-count">0 / 0</span>
+                                <span id="progress-status">대기 중...</span>
+                            </div>
+                        </div>
+                        
+                        <div id="results-container" class="results-container" style="display: none;">
+                            <div class="results-summary">
+                                <div>총 파일: <span id="result-total">0</span></div>
+                                <div>성공: <span id="result-success" class="success">0</span></div>
+                                <div>실패: <span id="result-error" class="error">0</span></div>
+                            </div>
+                            <table class="results-table" id="results-table">
+                                <thead>
+                                    <tr>
+                                        <th>날짜</th>
+                                        <th>파일명</th>
+                                        <th>상태</th>
+                                        <th>메시지</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                </tbody>
+                            </table>
+                            <button class="btn btn-secondary" id="download-results">결과 다운로드</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Template Management Page -->
+            <section id="templates" class="page">
+                <h2>📝 템플릿 관리</h2>
+                <div class="templates-container">
+                    <!-- Template List -->
+                    <div class="card">
+                        <div class="card-title">템플릿 목록</div>
+                        <div id="templates-list" class="templates-list">
+                            <p class="empty-state">템플릿을 로드 중...</p>
+                        </div>
+                    </div>
+
+                    <!-- Template Editor -->
+                    <div class="card">
+                        <div class="card-title">템플릿 편집</div>
+                        <form id="template-form" class="template-form">
+                            <div class="form-group">
+                                <label>템플릿 이름</label>
+                                <input type="text" id="template-name" placeholder="e.g., my_template" required>
+                            </div>
+                            <div class="form-group">
+                                <label>템플릿 내용</label>
+                                <textarea id="template-content" placeholder="템플릿 내용을 입력하세요. {text}와 {question} 플레이스홀더 사용 가능" rows="8" required></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">저장</button>
+                                <button type="reset" class="btn btn-secondary">초기화</button>
+                                <button type="button" class="btn btn-danger" id="delete-template" style="display: none;">삭제</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Job History Page -->
+            <section id="history" class="page">
+                <h2>📋 작업 이력</h2>
+                <div class="history-container">
+                    <!-- Search and Filter -->
+                    <div class="card">
+                        <div class="search-bar">
+                            <input type="text" id="search-input" placeholder="작업 ID 또는 파일명으로 검색..." class="search-input">
+                            <select id="status-filter" class="status-filter">
+                                <option value="">모든 상태</option>
+                                <option value="pending">대기 중</option>
+                                <option value="running">실행 중</option>
+                                <option value="completed">완료</option>
+                                <option value="failed">실패</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Job List -->
+                    <div class="card">
+                        <table class="jobs-table" id="jobs-table">
+                            <thead>
+                                <tr>
+                                    <th>작업 ID</th>
+                                    <th>상태</th>
+                                    <th>생성 시간</th>
+                                    <th>처리 파일</th>
+                                    <th>작업</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="empty-state">
+                                    <td colspan="5">작업 이력이 없습니다</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2026 STT 불완전판매요소 탐지 시스템 v2.0</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
