@@ -24,8 +24,11 @@ RUN pip install --no-cache-dir -r requirements
 COPY ./app /app/app
 
 # Copy .env file based on build argument (dev/prod)
-# This embeds environment variables at build time
-COPY ${ENV_FILE} /app/.env
+# Environment files are organized in environments/ folder
+COPY environments/ /app/environments/
+
+# Link the specific env file to .env
+RUN cp /app/environments/.env.${ENV} /app/.env || cp /app/environments/.env.dev /app/.env
 
 EXPOSE 8002
 

@@ -1,17 +1,40 @@
 # Configuration files
+.env
 .env.local
 .env.dev
 .env.prod
-
+environments/.env.local
+environments/.env.dev
+environments/.env.prod
 
 # Python
-.pyc
-__pycache__
-_scratch
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
-.vscode
-.idea
+.env_backup
+
+# Scratch and temp
+_scratch/
+temp/
+*.tmp
 
 # Build outputs
 output/
 *.tar
+*.tar.gz
+docker_build_output/

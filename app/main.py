@@ -1,4 +1,8 @@
-from fastapi import FastAPI, HTTPException
+"""
+FastAPI application for STT processing system.
+Main entry point that integrates all modules.
+"""
+
 import logging
 import time
 import asyncio
@@ -6,12 +10,19 @@ import os
 import pathlib
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any
+from typing import Dict, Any
 import uuid
+import requests
 
-# Import new modular components
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+
+# Import modular components
 from .config import config
-from .models import ProcessRequest, BatchProcessRequest, SFTPRequest, ProxyRequest, TemplateCreateRequest, JobStatusResponse
+from .models import (
+    ProcessRequest, BatchProcessRequest, SFTPRequest, ProxyRequest,
+    TemplateCreateRequest, JobStatusResponse
+)
 from .sftp_client import SFTPClient
 from .detection import get_detector
 from .utils import setup_logging, get_credentials_from_env, is_retriable_error
@@ -19,32 +30,37 @@ from .routes import health
 
 # Setup logging
 setup_logging(config.LOG_LEVEL)
-    CALLBACK_AUTH_HEADER = os.getenv("CALLBACK_AUTH_HEADER")
-    TEMPLATE_NAME = os.getenv("TEMPLATE_NAME", "qwen_default")
-    BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "4"))
-    APP_ENV = os.getenv("APP_ENV", "dev")
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
 logger = logging.getLogger(__name__)
-logger.info("loaded configuration from environment variables (APP_ENV=%s)", config.APP_ENV)
 
-app = FastAPI(title="STT Processing System", version="2.0")
+# Initialize FastAPI app
+app = FastAPI(
+    title="STT Processing System - Incomplete Sales Detection",
+    description="Process transcribed audio files to detect incomplete sales elements",
+    version="2.0"
+)
+
+# Include routers
+app.include_router(health.router)
+
+# Mount static files for web UI (if directory exists)
+static_dir = pathlib.Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    logger.info("mounted static files from %s", static_dir)
+
+# Application state
 START_TIME = time.time()
+JOB_STORE: Dict[str, Any] = {}  # job_id -> {status, results, ...}
+TEMPLATE_STORE: Dict[str, str] = {}  # template_name -> content
 
-# In-memory job store for batch processing: job_id -> {"status": "pending|running|completed", "results": [...], ...}
-JOB_STORE: Dict[str, Any] = {}
-
-# Template store: template_name -> template_content (loaded from files)
-TEMPLATE_STORE: Dict[str, str] = {}
-TEMPLATE_DIR = config.TEMPLATE_DIR
 
 def load_templates():
     """Load all templates from the templates directory into memory."""
     global TEMPLATE_STORE
     TEMPLATE_STORE = {}
-    if TEMPLATE_DIR.exists():
-        for template_file in TEMPLATE_DIR.glob("*"):
-            # Skip files starting with . or directories
+    
+    if config.TEMPLATE_DIR.exists():
+        for template_file in config.TEMPLATE_DIR.glob("*"):
             if template_file.name.startswith('.') or template_file.is_dir():
                 continue
             name = template_file.stem
@@ -52,13 +68,13 @@ def load_templates():
             TEMPLATE_STORE[name] = content
             logger.info("loaded template: %s", name)
     else:
-        logger.warning("templates directory not found at %s", TEMPLATE_DIR)
+        logger.warning("templates directory not found at %s", config.TEMPLATE_DIR)
+
 
 # Load templates on startup
 load_templates()
 
-# Include health check router
-app.include_router(health.router)
+logger.info("STT Processing System initialized (ENV=%s)", config.APP_ENV)
 
 
 # ============= Proxy Endpoint =============
@@ -67,11 +83,19 @@ app.include_router(health.router)
 async def proxy(req: ProxyRequest):
     """Forward requests to external endpoints (for testing/debugging)."""
     try:
-        import requests
         logger.info("proxy request to %s method=%s", req.url, req.method)
-        resp = requests.request(req.method, req.url, headers=req.headers, json=req.data, timeout=10)
+        resp = requests.request(
+            req.method, req.url,
+            headers=req.headers,
+            json=req.data,
+            timeout=10
+        )
         logger.info("proxy response status=%s for %s", resp.status_code, req.url)
-        return {"status_code": resp.status_code, "headers": dict(resp.headers), "text": resp.text}
+        return {
+            "status_code": resp.status_code,
+            "headers": dict(resp.headers),
+            "text": resp.text
+        }
     except Exception as e:
         logger.exception("proxy failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -84,7 +108,13 @@ async def sftp_list(req: SFTPRequest):
     """List files in an SFTP directory."""
     try:
         logger.info("sftp list request host=%s path=%s", req.host, req.path)
-        client = SFTPClient(host=req.host, port=req.port, username=req.username, password=req.password, pkey=req.key)
+        client = SFTPClient(
+            host=req.host,
+            port=req.port,
+            username=req.username,
+            password=req.password,
+            pkey=req.key
+        )
         files = client.listdir(req.path)
         client.close()
         logger.info("sftp list success host=%s count=%d", req.host, len(files))
@@ -94,384 +124,198 @@ async def sftp_list(req: SFTPRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============= Process Endpoints =============
-        if self.port is None:
-            self.port = config.SFTP_PORT
-        if self.username is None:
-            self.username = config.SFTP_USERNAME
-        if self.password is None:
-            self.password = config.SFTP_PASSWORD
-        if self.key is None:
-            self.key = config.SFTP_KEY
-        if self.credential_name is None:
-            self.credential_name = config.SFTP_CREDENTIAL_NAME
-        
-        # LLM settings
-        if self.call_type is None:
-            self.call_type = config.CALL_TYPE
-        if self.llm_url is None:
-            self.llm_url = config.LLM_URL
-        if self.llm_auth_header is None:
-            self.llm_auth_header = config.LLM_AUTH_HEADER
-        
-        # vLLM specific
-        if self.model_path is None:
-            self.model_path = config.MODEL_PATH
-        
-        # Agent specific
-        if self.agent_name is None:
-            self.agent_name = config.AGENT_NAME
-        if self.use_streaming is None:
-            self.use_streaming = config.USE_STREAMING
-        
-        # Callback settings
-        if self.callback_url is None:
-            self.callback_url = config.CALLBACK_URL
-        if self.callback_auth_header is None:
-            self.callback_auth_header = config.CALLBACK_AUTH_HEADER
-        
-        # Template settings
-        if self.template_name is None:
-            self.template_name = config.TEMPLATE_NAME
-        
-        return self
+# ============= Single File Processing =============
 
-
-def process_sync(req: ProcessRequest) -> dict:
-    """Synchronous helper that does the SFTP read, calls vLLM, and posts callback.
-
-    Returns a dict with result or raises Exceptions.
-    """
-    # Resolve config defaults first
-    req = req.resolve_config()
-    
-    logger.info("process_sync start remote_path=%s host=%s", req.remote_path, req.host)
-
-    # Resolve SFTP credentials: from env if credential_name given, else from request
+def _resolve_credentials(req: ProcessRequest):
+    """Resolve SFTP credentials from request or environment."""
     sftp_username = req.username
     sftp_password = req.password
     sftp_key = req.key
     
     if req.credential_name:
-        cred_prefix = f"SFTP_CRED_{req.credential_name.upper()}"
-        # Environment variables take precedence, fall back to request values
-        env_username = os.getenv(f"{cred_prefix}_USERNAME")
-        env_password = os.getenv(f"{cred_prefix}_PASSWORD")
-        env_key = os.getenv(f"{cred_prefix}_KEY")
-        
-        if env_username is not None:
-            sftp_username = env_username
-        if env_password is not None:
-            sftp_password = env_password
-        if env_key is not None:
-            sftp_key = env_key
-        
-        logger.info("loaded SFTP credentials from env prefix=%s", cred_prefix)
+        creds = get_credentials_from_env(
+            req.credential_name,
+            default_username=req.username,
+            default_password=req.password,
+            default_key=req.key
+        )
+        sftp_username = creds["username"]
+        sftp_password = creds["password"]
+        sftp_key = creds["key"]
+        logger.info("loaded SFTP credentials from env: %s", req.credential_name)
+    
+    return sftp_username, sftp_password, sftp_key
 
-    # 1) fetch file over SFTP unless inline_text provided
+
+def _fetch_text(req: ProcessRequest, sftp_username: str, sftp_password: str, sftp_key: str) -> str:
+    """Fetch text content from SFTP or inline."""
     if req.inline_text is not None:
-        text = req.inline_text
-        logger.info("using inline_text length=%d", len(text))
-    else:
-        client = SFTPClient(host=req.host, port=req.port, username=sftp_username, password=sftp_password, pkey=sftp_key)
-        try:
-            text = client.read_file(req.remote_path)
-        finally:
-            client.close()
+        logger.info("using inline_text length=%d", len(req.inline_text))
+        return req.inline_text
+    
+    if not req.remote_path:
+        raise ValueError("remote_path is required when not using inline_text")
+    
+    client = SFTPClient(
+        host=req.host,
+        port=req.port,
+        username=sftp_username,
+        password=sftp_password,
+        pkey=sftp_key
+    )
+    try:
+        text = client.read_file(req.remote_path)
+        logger.info("fetched remote file length=%d", len(text) if text else 0)
+        return text
+    finally:
+        client.close()
 
-    logger.info("fetched remote file length=%d", len(text) if text is not None else 0)
 
-    # Build the prompt for LLM
+def _build_prompt(req: ProcessRequest, text: str) -> str:
+    """Build prompt from template or custom prompt."""
     if req.custom_prompt:
-        prompt = req.custom_prompt
-        logger.info("using custom_prompt length=%d", len(prompt))
-    elif req.template_name:
+        logger.info("using custom_prompt length=%d", len(req.custom_prompt))
+        return req.custom_prompt
+    
+    if req.template_name:
         if req.template_name not in TEMPLATE_STORE:
-            raise ValueError(f"Template '{req.template_name}' not found. Available: {list(TEMPLATE_STORE.keys())}")
+            available = list(TEMPLATE_STORE.keys())
+            raise ValueError(
+                f"Template '{req.template_name}' not found. Available: {available}"
+            )
         template = TEMPLATE_STORE[req.template_name]
-        # Replace {text} and {question} placeholders
         prompt = template.format(text=text, question=req.question or "")
         logger.info("built prompt from template=%s length=%d", req.template_name, len(prompt))
-    else:
-        # Default: use text as-is
-        prompt = text
-        logger.info("using raw text as prompt")
-
-    # 2) call vLLM/Agent with retry
-    logger.info("calling LLM service type=%s", req.call_type)
+        return prompt
     
-    def is_retriable_status(status_code: int) -> bool:
-        return 500 <= status_code < 600 or status_code == 429
+    # Default: use text as-is
+    logger.info("using raw text as prompt")
+    return text
 
-    from urllib.parse import urlparse
 
-    # internal sync handlers for mock endpoints
-    def mock_vllm_sync(payload: dict) -> dict:
-        text = payload.get("messages", [{}])[0].get("content", "") if "messages" in payload else payload.get("input", "")
-        tokens = len(text.split())
-        summary = text[:200]
-        return {"choices": [{"message": {"content": summary}}], "usage": {"completion_tokens": tokens}}
+async def _call_detection_api(req: ProcessRequest, prompt: str) -> Dict[str, Any]:
+    """Call detection API (vLLM or Agent)."""
+    logger.info("calling detection service: type=%s", req.call_type)
+    
+    detector = get_detector(req.call_type, config)
+    
+    # For vLLM, use the constructed prompt
+    # For Agent, use both text and prompt
+    result = await detector.detect(text=prompt, prompt=prompt)
+    
+    logger.info("detection completed: strategy=%s, issues=%d",
+                result.get("strategy"), len(result.get("detected_issues", [])))
+    
+    return result
 
-    def mock_agent_sync(payload: dict) -> dict:
-        user_query = payload.get("parameters", {}).get("user_query", "")
-        return {"result": f"Agent processed: {user_query[:100]}"}
 
-    def mock_callback_sync(payload: dict) -> dict:
-        logger.info("mock callback sync received keys=%s", list(payload.keys()))
-        return {"status": "accepted"}
-
-    def http_post_with_retries(url: str, json_payload: dict, attempts: int = 3, backoff_base: float = 1.0, timeout: int = 30, auth_header: str | None = None):
-        last_exc = None
-        for attempt in range(1, attempts + 1):
-            try:
-                # if target is local mock endpoint
-                parsed = urlparse(url)
-                # Check if this is a mock endpoint (includes v1/chat/completions path)
-                is_mock_vllm = (parsed.hostname in ("localhost", "127.0.0.1") and 
-                               parsed.port == 8002 and 
-                               ("/mock/vllm" in parsed.path or parsed.path == "/mock/vllm"))
-                is_mock_agent = (parsed.hostname in ("localhost", "127.0.0.1") and 
-                                parsed.port == 8002 and 
-                                ("/mock/agent" in parsed.path or parsed.path == "/mock/agent"))
-                is_mock_callback = (parsed.hostname in ("localhost", "127.0.0.1") and 
-                                   parsed.port == 8002 and 
-                                   "/mock/callback" in parsed.path)
-                
-                if is_mock_vllm or is_mock_agent or is_mock_callback:
-                    class SimpleResp:
-                        def __init__(self, json_obj, status_code: int = 200, headers: dict | None = None):
-                            self._json = json_obj
-                            self.status_code = status_code
-                            self.headers = headers or {"content-type": "application/json"}
-
-                        def json(self):
-                            return self._json
-
-                        @property
-                        def text(self):
-                            return str(self._json)
-
-                        def raise_for_status(self):
-                            if self.status_code >= 400:
-                                raise requests.HTTPError(f"status={self.status_code}")
-
-                    if is_mock_vllm:
-                        resp = SimpleResp(mock_vllm_sync(json_payload))
-                    elif is_mock_agent:
-                        resp = SimpleResp(mock_agent_sync(json_payload))
-                    else:
-                        resp = SimpleResp(mock_callback_sync(json_payload))
-                else:
-                    headers = {"Content-Type": "application/json"}
-                    if auth_header:
-                        headers["Authorization"] = auth_header
-                    resp = requests.post(url, json=json_payload, headers=headers, timeout=timeout)
-                
-                if is_retriable_status(resp.status_code):
-                    last_exc = requests.HTTPError(f"status={resp.status_code}")
-                    logger.warning("retriable response %s from %s (attempt %d)", resp.status_code, url, attempt)
-                    time.sleep(backoff_base * (2 ** (attempt - 1)))
-                    continue
-                resp.raise_for_status()
-                return resp
-            except requests.RequestException as e:
-                last_exc = e
-                logger.warning("http attempt %d failed for %s: %s", attempt, url, e)
-                if attempt < attempts:
-                    time.sleep(backoff_base * (2 ** (attempt - 1)))
-        raise last_exc
-
-    # Prepare LLM request based on call_type
-    if req.call_type == "agent":
-        if not req.agent_name:
-            raise ValueError("agent_name is required for agent call_type")
+def _send_callback(req: ProcessRequest, detection_result: Dict[str, Any]) -> bool:
+    """Send results to callback URL."""
+    if not req.callback_url:
+        logger.debug("no callback_url, skipping callback")
+        return True
+    
+    try:
+        headers = {"Content-Type": "application/json"}
+        if req.callback_auth_header:
+            headers["Authorization"] = req.callback_auth_header
         
-        agent_url = req.llm_url
-        llm_payload = {
-            "use_streaming": req.use_streaming,
-            "parameters": {
-                "user_query": prompt
-            }
+        payload = {
+            "remote_path": req.remote_path,
+            "detection_result": detection_result,
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
-        logger.info("calling agent=%s url=%s", req.agent_name, agent_url)
-        llm_resp = http_post_with_retries(agent_url, llm_payload, attempts=3, backoff_base=1.0, timeout=30, auth_header=req.llm_auth_header)
-        llm_output = llm_resp.json()
-    else:  # vllm (default)
-        if not req.model_path:
-            raise ValueError("model_path is required for vllm call_type")
         
-        vllm_url = req.llm_url
-        llm_payload = {
-            "model": req.model_path,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
+        logger.info("sending callback to %s", req.callback_url)
+        resp = requests.post(req.callback_url, json=payload, headers=headers, timeout=30)
+        resp.raise_for_status()
+        
+        logger.info("callback sent successfully: status=%d", resp.status_code)
+        return True
+    except Exception as e:
+        logger.exception("callback failed: %s", e)
+        return False
+
+
+async def process_sync(req: ProcessRequest) -> Dict[str, Any]:
+    """Synchronous processing helper for single file."""
+    req = req.resolve_config(config)
+    
+    logger.info("process_sync start: remote_path=%s, host=%s", req.remote_path, req.host)
+    
+    try:
+        # 1. Resolve credentials
+        sftp_username, sftp_password, sftp_key = _resolve_credentials(req)
+        
+        # 2. Fetch text
+        text = _fetch_text(req, sftp_username, sftp_password, sftp_key)
+        
+        # 3. Build prompt
+        prompt = _build_prompt(req, text)
+        
+        # 4. Call detection API
+        detection_result = await _call_detection_api(req, prompt)
+        
+        # 5. Send callback (non-blocking failure)
+        _send_callback(req, detection_result)
+        
+        logger.info("process_sync completed successfully")
+        
+        return {
+            "success": True,
+            "remote_path": req.remote_path,
+            "detection_result": detection_result
         }
-        logger.info("calling vLLM model=%s url=%s", req.model_path, vllm_url)
-        llm_resp = http_post_with_retries(vllm_url, llm_payload, attempts=3, backoff_base=1.0, timeout=30, auth_header=req.llm_auth_header)
-        llm_output = llm_resp.json()
-
-    # 3) forward result to callback_url with retry
-    logger.info("LLM returned; forwarding to callback %s", req.callback_url)
-    cresp = http_post_with_retries(req.callback_url, {"llm_output": llm_output, "remote_path": req.remote_path, "call_type": req.call_type}, attempts=2, backoff_base=0.5, timeout=10, auth_header=req.callback_auth_header)
-    logger.info("callback posted status=%s", cresp.status_code)
-
-    return {"status": "ok", "llm_output": llm_output, "callback_status": cresp.status_code}
+    
+    except Exception as e:
+        logger.exception("process_sync failed: %s", e)
+        raise
 
 
 @app.post("/process")
 async def process(req: ProcessRequest):
-    """Async wrapper around process_sync using the default thread pool."""
-    loop = asyncio.get_event_loop()
+    """Process a single file for incomplete sales element detection."""
     try:
-        result = await loop.run_in_executor(None, process_sync, req)
+        result = await process_sync(req)
         return result
-    except requests.HTTPError as he:
-        logger.exception("Upstream HTTP error: %s", he)
-        raise HTTPException(status_code=502, detail=f"Upstream HTTP error: {he}")
     except Exception as e:
-        logger.exception("processing failed: %s", e)
+        logger.exception("process endpoint failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class BatchProcessRequest(BaseModel):
-    # SFTP connection credentials (optional, defaults from config)
-    host: str | None = None  # defaults to config.SFTP_HOST
-    port: int | None = None  # defaults to config.SFTP_PORT
-    username: str | None = None  # defaults to config.SFTP_USERNAME
-    password: str | None = None  # defaults to config.SFTP_PASSWORD
-    key: str | None = None  # defaults to config.SFTP_KEY
-    credential_name: str | None = None  # defaults to config.SFTP_CREDENTIAL_NAME
-    
-    # Date range for batch processing (YYYYMMDD format)
-    start_date: str  # e.g. "20260120" (required)
-    end_date: str    # e.g. "20260127" (required)
-    root_path: str | None = None  # defaults to config.SFTP_ROOT_PATH
-    
-    # LLM call configuration (optional, defaults from config)
-    call_type: str | None = None  # defaults to config.CALL_TYPE
-    llm_url: str | None = None  # defaults to config.LLM_URL
-    llm_auth_header: str | None = None  # defaults to config.LLM_AUTH_HEADER
-    
-    # vLLM specific
-    model_path: str | None = None  # defaults to config.MODEL_PATH
-    
-    # Agent specific
-    agent_name: str | None = None  # defaults to config.AGENT_NAME
-    use_streaming: bool | None = None  # defaults to config.USE_STREAMING
-    
-    # Callback settings
-    callback_url: str | None = None  # defaults to config.CALLBACK_URL
-    callback_auth_header: str | None = None  # defaults to config.CALLBACK_AUTH_HEADER
-    
-    # Template and prompt configuration
-    template_name: str | None = None  # defaults to config.TEMPLATE_NAME
-    question: str | None = None
-    custom_prompt: str | None = None
-    
-    # Processing settings
-    concurrency: int | None = None  # defaults to config.BATCH_CONCURRENCY
-    
-    def resolve_config(self):
-        """Resolve all None values from config defaults."""
-        # SFTP settings
-        if self.host is None:
-            self.host = config.SFTP_HOST
-        if self.port is None:
-            self.port = config.SFTP_PORT
-        if self.username is None:
-            self.username = config.SFTP_USERNAME
-        if self.password is None:
-            self.password = config.SFTP_PASSWORD
-        if self.key is None:
-            self.key = config.SFTP_KEY
-        if self.credential_name is None:
-            self.credential_name = config.SFTP_CREDENTIAL_NAME
-        if self.root_path is None:
-            self.root_path = config.SFTP_ROOT_PATH
-        
-        # LLM settings
-        if self.call_type is None:
-            self.call_type = config.CALL_TYPE
-        if self.llm_url is None:
-            self.llm_url = config.LLM_URL
-        if self.llm_auth_header is None:
-            self.llm_auth_header = config.LLM_AUTH_HEADER
-        
-        # vLLM specific
-        if self.model_path is None:
-            self.model_path = config.MODEL_PATH
-        
-        # Agent specific
-        if self.agent_name is None:
-            self.agent_name = config.AGENT_NAME
-        if self.use_streaming is None:
-            self.use_streaming = config.USE_STREAMING
-        
-        # Callback settings
-        if self.callback_url is None:
-            self.callback_url = config.CALLBACK_URL
-        if self.callback_auth_header is None:
-            self.callback_auth_header = config.CALLBACK_AUTH_HEADER
-        
-        # Template settings
-        if self.template_name is None:
-            self.template_name = config.TEMPLATE_NAME
-        
-        # Processing settings
-        if self.concurrency is None:
-            self.concurrency = config.BATCH_CONCURRENCY
-        
-        return self
-
+# ============= Batch Processing (Synchronous) =============
 
 @app.post("/process/batch")
 async def process_batch(req: BatchProcessRequest):
-    """Process all txt files within a date range.
-    
-    Discovers all date-named folders (YYYYMMDD) within the specified range,
-    collects all .txt files from those folders, and processes them in parallel.
-    """
+    """Process all files within a date range (synchronous)."""
     try:
-        # Resolve config defaults first
-        req = req.resolve_config()
-        # Resolve SFTP credentials
-        sftp_username = req.username
-        sftp_password = req.password
-        sftp_key = req.key
+        req = req.resolve_config(config)
+        logger.info("batch processing: date range=%s to %s", req.start_date, req.end_date)
         
-        if req.credential_name:
-            cred_prefix = f"SFTP_CRED_{req.credential_name.upper()}"
-            env_username = os.getenv(f"{cred_prefix}_USERNAME")
-            env_password = os.getenv(f"{cred_prefix}_PASSWORD")
-            env_key = os.getenv(f"{cred_prefix}_KEY")
-            
-            if env_username is not None:
-                sftp_username = env_username
-            if env_password is not None:
-                sftp_password = env_password
-            if env_key is not None:
-                sftp_key = env_key
-            
-            logger.info("loaded SFTP credentials from env prefix=%s", cred_prefix)
+        # Resolve credentials
+        sftp_username, sftp_password, sftp_key = _resolve_credentials(req)
         
-        # Connect to SFTP and discover files
-        logger.info("batch processing date range=%s to %s", req.start_date, req.end_date)
-        client = SFTPClient(host=req.host, port=req.port, username=sftp_username, password=sftp_password, pkey=sftp_key)
+        # Connect and discover files
+        client = SFTPClient(
+            host=req.host,
+            port=req.port,
+            username=sftp_username,
+            password=sftp_password,
+            pkey=sftp_key
+        )
+        
+        results = []
         
         try:
-            # Convert date strings to comparable integers
+            # Convert dates to integers for comparison
             start_date_int = int(req.start_date)
             end_date_int = int(req.end_date)
             
-            # List all date-named directories
+            # List all directories
             all_dirs = client.list_directories(req.root_path)
             logger.debug("found %d directories in %s", len(all_dirs), req.root_path)
             
-            # Filter directories by date range
+            # Filter by date range
             target_dates = []
             for dir_name in all_dirs:
                 if len(dir_name) == 8 and dir_name.isdigit():
@@ -480,10 +324,11 @@ async def process_batch(req: BatchProcessRequest):
                         target_dates.append(dir_name)
             
             target_dates.sort()
-            logger.info("found %d date folders in range [%s, %s]: %s", len(target_dates), req.start_date, req.end_date, target_dates)
+            logger.info("found %d date folders in range [%s, %s]",
+                       len(target_dates), req.start_date, req.end_date)
             
-            # Collect all files from target date folders (no extension filter)
-            file_paths = []  # List of (date_folder, filename, full_path)
+            # Collect files from target folders
+            file_paths = []
             for date_folder in target_dates:
                 folder_path = f"{req.root_path}/{date_folder}".replace("//", "/")
                 txt_files = client.list_files(folder_path, suffix=None)
@@ -504,19 +349,18 @@ async def process_batch(req: BatchProcessRequest):
         
         # Process files in parallel
         max_workers = max(1, req.concurrency)
-        results = []
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
             for idx, (date_folder, filename, full_path) in enumerate(file_paths):
-                # Create a ProcessRequest for this file
+                # Create ProcessRequest for this file
                 process_req = ProcessRequest(
                     host=req.host,
                     port=req.port,
                     username=sftp_username,
                     password=sftp_password,
                     key=sftp_key,
-                    credential_name=None,  # Already resolved above
+                    credential_name=None,  # Already resolved
                     remote_path=full_path,
                     call_type=req.call_type,
                     llm_url=req.llm_url,
@@ -532,7 +376,7 @@ async def process_batch(req: BatchProcessRequest):
                     inline_text=None
                 )
                 
-                future = executor.submit(process_sync, process_req)
+                future = executor.submit(asyncio.run, process_sync(process_req))
                 futures[future] = (idx, date_folder, filename)
             
             for fut in as_completed(futures):
@@ -558,6 +402,7 @@ async def process_batch(req: BatchProcessRequest):
         
         # Sort results by original index
         results.sort(key=lambda r: r["index"])
+        
         return {"results": results, "total": len(file_paths)}
     
     except Exception as e:
@@ -565,88 +410,40 @@ async def process_batch(req: BatchProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/mock/vllm")
-async def mock_vllm(body: dict):
-    """Mock vLLM endpoint that mimics /v1/chat/completions format."""
-    messages = body.get("messages", [{}])
-    user_content = messages[0].get("content", "") if messages else ""
-    tokens = len(user_content.split())
-    summary = user_content[:200]
-    return {
-        "choices": [
-            {
-                "message": {
-                    "content": summary,
-                    "role": "assistant"
-                }
-            }
-        ],
-        "usage": {
-            "completion_tokens": tokens,
-            "prompt_tokens": tokens
-        }
-    }
+# ============= Batch Processing (Asynchronous) =============
 
-
-@app.post("/mock/agent/{agent_name}/messages")
-async def mock_agent(agent_name: str, body: dict):
-    """Mock agent endpoint."""
-    user_query = body.get("parameters", {}).get("user_query", "")
-    return {
-        "result": f"Agent '{agent_name}' processed: {user_query[:100]}",
-        "agent": agent_name,
-        "use_streaming": body.get("use_streaming", False)
-    }
-
-
-@app.post("/mock/callback")
-async def mock_callback(body: dict):
-    """Mock callback that just logs and returns accepted."""
-    logger.info("mock callback received: keys=%s", list(body.keys()))
-    return {"status": "accepted"}
-
-
-async def run_batch_async(job_id: str, req: "BatchProcessRequest"):
-    """Background task to execute batch processing and store results."""
+async def run_batch_async(job_id: str, req: BatchProcessRequest):
+    """Background task to execute batch processing asynchronously."""
     JOB_STORE[job_id]["status"] = "running"
     JOB_STORE[job_id]["started_at"] = datetime.now(timezone.utc).isoformat()
-
-    # Resolve config defaults first
-    req = req.resolve_config()
-
+    
+    req = req.resolve_config(config)
+    
     results = []
     try:
-        # Resolve SFTP credentials
-        sftp_username = req.username
-        sftp_password = req.password
-        sftp_key = req.key
+        # Resolve credentials
+        sftp_username, sftp_password, sftp_key = _resolve_credentials(req)
         
-        if req.credential_name:
-            cred_prefix = f"SFTP_CRED_{req.credential_name.upper()}"
-            env_username = os.getenv(f"{cred_prefix}_USERNAME")
-            env_password = os.getenv(f"{cred_prefix}_PASSWORD")
-            env_key = os.getenv(f"{cred_prefix}_KEY")
-            
-            if env_username is not None:
-                sftp_username = env_username
-            if env_password is not None:
-                sftp_password = env_password
-            if env_key is not None:
-                sftp_key = env_key
+        logger.info("batch job %s: processing date range %s to %s",
+                   job_id, req.start_date, req.end_date)
         
-        # Connect to SFTP and discover files
-        logger.info("batch job %s: processing date range %s to %s", job_id, req.start_date, req.end_date)
-        client = SFTPClient(host=req.host, port=req.port, username=sftp_username, password=sftp_password, pkey=sftp_key)
+        client = SFTPClient(
+            host=req.host,
+            port=req.port,
+            username=sftp_username,
+            password=sftp_password,
+            pkey=sftp_key
+        )
         
         try:
-            # Convert date strings to comparable integers
+            # Convert dates to integers for comparison
             start_date_int = int(req.start_date)
             end_date_int = int(req.end_date)
             
-            # List all date-named directories
+            # List all directories
             all_dirs = client.list_directories(req.root_path)
             
-            # Filter directories by date range
+            # Filter by date range
             target_dates = []
             for dir_name in all_dirs:
                 if len(dir_name) == 8 and dir_name.isdigit():
@@ -657,7 +454,7 @@ async def run_batch_async(job_id: str, req: "BatchProcessRequest"):
             target_dates.sort()
             logger.info("batch job %s: found %d date folders", job_id, len(target_dates))
             
-            # Collect all files from target date folders (no extension filter)
+            # Collect files from target folders
             file_paths = []
             for date_folder in target_dates:
                 folder_path = f"{req.root_path}/{date_folder}".replace("//", "/")
@@ -701,7 +498,7 @@ async def run_batch_async(job_id: str, req: "BatchProcessRequest"):
                     inline_text=None
                 )
                 
-                future = executor.submit(process_sync, process_req)
+                future = executor.submit(asyncio.run, process_sync(process_req))
                 futures[future] = (idx, date_folder, filename)
             
             for fut in as_completed(futures):
@@ -739,27 +536,31 @@ async def run_batch_async(job_id: str, req: "BatchProcessRequest"):
 
 @app.post("/process/batch/submit")
 async def process_batch_submit(req: BatchProcessRequest):
-    """Submit a batch job and return job_id. The job runs asynchronously in background.
-    
-    Processes all txt files in date-named folders within the specified date range.
-    """
+    """Submit a batch job and return job_id (asynchronous processing)."""
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    
     JOB_STORE[job_id] = {
-        "status": "pending", 
-        "created_at": now, 
-        "results": None, 
-        "started_at": None, 
+        "status": "pending",
+        "created_at": now,
+        "results": None,
+        "started_at": None,
         "completed_at": None,
         "error": None,
         "date_range": f"{req.start_date} to {req.end_date}"
     }
-    logger.info("batch job %s submitted for date range %s to %s", job_id, req.start_date, req.end_date)
-
-    # Schedule background task (fire and forget)
+    
+    logger.info("batch job %s submitted for date range %s to %s",
+               job_id, req.start_date, req.end_date)
+    
+    # Schedule background task
     asyncio.create_task(run_batch_async(job_id, req))
-
-    return {"job_id": job_id, "status": "submitted", "date_range": f"{req.start_date} to {req.end_date}"}
+    
+    return {
+        "job_id": job_id,
+        "status": "submitted",
+        "date_range": f"{req.start_date} to {req.end_date}"
+    }
 
 
 @app.get("/process/batch/status/{job_id}")
@@ -767,28 +568,28 @@ async def process_batch_status(job_id: str):
     """Check the status of a batch job."""
     if job_id not in JOB_STORE:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-
+    
     job = JOB_STORE[job_id]
-    return {
-        "job_id": job_id,
-        "status": job["status"],
-        "created_at": job["created_at"],
-        "started_at": job.get("started_at"),
-        "completed_at": job.get("completed_at"),
-        "date_range": job.get("date_range"),
-        "error": job.get("error"),
-        "results": job.get("results") if job["status"] == "completed" else None,
-    }
+    return JobStatusResponse(
+        job_id=job_id,
+        status=job["status"],
+        created_at=job["created_at"],
+        started_at=job.get("started_at"),
+        completed_at=job.get("completed_at"),
+        date_range=job.get("date_range"),
+        error=job.get("error"),
+        results=job.get("results") if job["status"] == "completed" else None
+    )
 
 
-# ============= Template Management API =============
+# ============= Template Management =============
 
 @app.get("/templates")
 async def list_templates():
     """List all available prompt templates."""
     return {
         "templates": list(TEMPLATE_STORE.keys()),
-        "count": len(TEMPLATE_STORE),
+        "count": len(TEMPLATE_STORE)
     }
 
 
@@ -797,16 +598,11 @@ async def get_template(template_name: str):
     """Get the content of a specific template."""
     if template_name not in TEMPLATE_STORE:
         raise HTTPException(status_code=404, detail=f"Template '{template_name}' not found")
-
+    
     return {
         "name": template_name,
-        "content": TEMPLATE_STORE[template_name],
+        "content": TEMPLATE_STORE[template_name]
     }
-
-
-class TemplateCreateRequest(BaseModel):
-    name: str
-    content: str
 
 
 @app.post("/templates")
@@ -814,15 +610,15 @@ async def create_template(req: TemplateCreateRequest):
     """Create or update a template."""
     if not req.name or not req.content:
         raise HTTPException(status_code=400, detail="name and content are required")
-
+    
     # Save to memory
     TEMPLATE_STORE[req.name] = req.content
-
+    
     # Also save to file for persistence
-    template_file = TEMPLATE_DIR / f"{req.name}.txt"
+    template_file = config.TEMPLATE_DIR / f"{req.name}.txt"
     template_file.write_text(req.content, encoding="utf-8")
     logger.info("created/updated template: %s", req.name)
-
+    
     return {"name": req.name, "status": "created"}
 
 
@@ -831,15 +627,15 @@ async def delete_template(template_name: str):
     """Delete a template."""
     if template_name not in TEMPLATE_STORE:
         raise HTTPException(status_code=404, detail=f"Template '{template_name}' not found")
-
+    
     del TEMPLATE_STORE[template_name]
-
+    
     # Also delete from file
-    template_file = TEMPLATE_DIR / f"{template_name}.txt"
+    template_file = config.TEMPLATE_DIR / f"{template_name}.txt"
     if template_file.exists():
         template_file.unlink()
         logger.info("deleted template: %s", template_name)
-
+    
     return {"name": template_name, "status": "deleted"}
 
 
@@ -850,5 +646,50 @@ async def refresh_templates():
     return {
         "status": "refreshed",
         "templates": list(TEMPLATE_STORE.keys()),
-        "count": len(TEMPLATE_STORE),
+        "count": len(TEMPLATE_STORE)
     }
+
+
+# ============= Mock Endpoints (for testing) =============
+
+@app.post("/mock/vllm")
+async def mock_vllm(body: dict):
+    """Mock vLLM endpoint that mimics /v1/chat/completions format."""
+    messages = body.get("messages", [{}])
+    user_content = messages[0].get("content", "") if messages else ""
+    tokens = len(user_content.split())
+    summary = user_content[:200]
+    
+    return {
+        "choices": [
+            {
+                "message": {
+                    "content": summary,
+                    "role": "assistant"
+                }
+            }
+        ],
+        "usage": {
+            "completion_tokens": tokens,
+            "prompt_tokens": tokens
+        }
+    }
+
+
+@app.post("/mock/agent/{agent_name}/messages")
+async def mock_agent(agent_name: str, body: dict):
+    """Mock agent endpoint."""
+    user_query = body.get("parameters", {}).get("user_query", "")
+    
+    return {
+        "result": f"Agent '{agent_name}' processed: {user_query[:100]}",
+        "agent": agent_name,
+        "use_streaming": body.get("use_streaming", False)
+    }
+
+
+@app.post("/mock/callback")
+async def mock_callback(body: dict):
+    """Mock callback that just logs and returns accepted."""
+    logger.info("mock callback received: keys=%s", list(body.keys()))
+    return {"status": "accepted"}
