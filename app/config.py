@@ -9,24 +9,31 @@ from dotenv import load_dotenv
 
 
 def load_env():
-    """Load environment variables from .env file based on APP_ENV."""
-    env_file = pathlib.Path(__file__).parent.parent / ".env"
+    """
+    Load environment variables from APP_ENV-specific .env file.
+    
+    Priority:
+    1. environments/.env.${APP_ENV} (e.g., environments/.env.prod)
+    2. /app/.env (fallback for backward compatibility)
+    3. No .env file (uses system environment variables only)
+    
+    APP_ENV can be:
+    - Set at build time: --build-arg ENV=dev
+    - Set at runtime: -e APP_ENV=prod
+    - Default: dev
+    """
+    app_env = os.getenv("APP_ENV", "dev")
+    
+    # Environment-specific .env file path
+    env_file = pathlib.Path(__file__).parent.parent / f"environments/.env.{app_env}"
     
     if env_file.exists():
         load_dotenv(env_file)
     else:
-        # Fall back to environment-specific .env file
-        app_env = os.getenv("APP_ENV", "dev")
-        env_file_map = {
-            "prod": ".env.prod",
-            "local": ".env.local",
-            "dev": ".env.dev",
-        }
-        env_filename = env_file_map.get(app_env, ".env.dev")
-        env_file = pathlib.Path(__file__).parent.parent / env_filename
-        
-        if env_file.exists():
-            load_dotenv(env_file)
+        # Fallback to root .env if environments/ doesn't exist
+        fallback_env = pathlib.Path(__file__).parent.parent / ".env"
+        if fallback_env.exists():
+            load_dotenv(fallback_env)
 
 
 # Load environment variables on module import

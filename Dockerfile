@@ -1,13 +1,17 @@
 FROM python:3.11.14-slim-trixie
 
+# Build-time environment selection (default: prod)
+# Usage: docker build --build-arg ENV=dev .
 ARG ENV=prod
-ARG ENV_FILE=.env.${ENV}
 
+# Set working directory
+WORKDIR /app
+
+# Python and pip environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
-WORKDIR /app
+    PIP_NO_CACHE_DIR=1 \
+    APP_ENV=${ENV}
 
 # system deps needed for building cryptography/paramiko
 RUN apt-get update \
@@ -19,19 +23,21 @@ RUN apt-get update \
        openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt /app/
+# Copy requirements first for better layer caching
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY ./app /app/app
+COPY ./app ./app
 
-# Copy environment files and templates
-COPY environments/ /app/environments/
-COPY app/templates/ /app/app/templates/
+# Copy environment configuration and templates (all available at runtime)
+COPY environments/ ./environments/
+COPY app/templates/ ./app/templates/
 
-# Link the specific env file to .env (ENV variable takes precedence)
-RUN cp /app/environments/.env.${ENV} /app/.env || cp /app/environments/.env.dev /app/.env
+# Runtime environment loading:
+# - APP_ENV environment variable determines which .env file to load
+# - Can be overridden at runtime: docker run -e APP_ENV=dev ...
+# - config.py loads from environments/.env.${APP_ENV}
 
 EXPOSE 8002
 
