@@ -42,6 +42,7 @@ app = FastAPI(
 # Include routers (web router first to handle / and /ui)
 app.include_router(web.router)
 app.include_router(health.router)
+app.include_router(templates.router)
 app.include_router(process.router)
 app.include_router(sftp.router)
 app.include_router(proxy.router)

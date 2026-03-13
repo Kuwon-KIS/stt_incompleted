@@ -1,10 +1,11 @@
-FROM python:3.10.19-slim-trixie
+FROM python:3.11.14-slim-trixie
 
 ARG ENV=prod
 ARG ENV_FILE=.env.${ENV}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
@@ -18,20 +19,25 @@ RUN apt-get update \
        openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements /app/
-RUN pip install --no-cache-dir -r requirements
+# Copy requirements first for better caching
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application code
 COPY ./app /app/app
 
-# Copy .env file based on build argument (dev/prod)
-# Environment files are organized in environments/ folder
+# Copy environment files and templates
 COPY environments/ /app/environments/
+COPY app/templates/ /app/app/templates/
 
-# Link the specific env file to .env
+# Link the specific env file to .env (ENV variable takes precedence)
 RUN cp /app/environments/.env.${ENV} /app/.env || cp /app/environments/.env.dev /app/.env
 
 EXPOSE 8002
 
-# CMD uses environment variables from .env file embedded at build time
-# Runtime docker run -e options will override these values (higher priority)
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8002/health')" || exit 1
+
+# Run application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

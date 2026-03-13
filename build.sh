@@ -1,53 +1,85 @@
 #!/bin/bash
+# Docker build script - builds image based on environment
+# Usage: ./build.sh [dev|local|prod]
 
 set -e
 
-# 색상 정의
+# Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Output 디렉토리 설정
+ENV="${1:-dev}"
+IMAGE_NAME="stt-service"
+IMAGE_TAG="${ENV}-latest"
+FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 OUTPUT_DIR="./output"
 
-# 함수: 사용법 출력
-usage() {
-    echo -e "${BLUE}사용법:${NC}"
-    echo "  ./build.sh <repository> [tag] [--env local|dev|prod] [--push|--save]"
-    echo ""
-    echo -e "${BLUE}예시:${NC}"
-    echo "  ./build.sh stt-service latest --env local      # Mac 로컬 테스트"
-    echo "  ./build.sh docker.io/username/stt dev --env dev --push  # Linux dev 서버"
-    echo "  ./build.sh docker.io/username/stt prod --env prod --push # Linux prod 서버"
-    echo ""
-    echo -e "${BLUE}옵션:${NC}"
-    echo "  repository           : Docker 레지스트리 주소 (필수)"
-    echo "  tag                  : 이미지 태그 (기본값: latest)"
-    echo "  --env local|dev|prod : 빌드 환경 지정 (선택사항)"
-    echo "                         local = .env.local (Mac 로컬 테스트용)"
-    echo "                         dev   = .env.dev (Linux dev 서버용)"
-    echo "                         prod  = .env.prod (Linux prod 서버용, 기본값)"
-    echo "  --push               : 빌드 후 레지스트리에 푸시 (선택사항)"
-    echo "  --save               : 빌드 후 tar 파일로 저장 (선택사항)"
-    echo ""
-    echo -e "${BLUE}빌드 시간에 설정이 이미지에 embed됩니다.${NC}"
-    echo "  Runtime 시 docker run -e 옵션으로 override할 수 있습니다."
-    echo ""
-    echo -e "${BLUE}실행 예시 (Runtime override):${NC}"
-    echo "  docker run --env-file .env.dev -p 8002:8002 stt-service:latest"
+# Validate environment
+if [[ ! " dev local prod " =~ " ${ENV} " ]]; then
+    echo -e "${RED}❌ Invalid environment: $ENV${NC}"
+    echo "Usage: ./build.sh [dev|local|prod]"
     exit 1
-}
-
-# 인자 검증
-if [ $# -lt 1 ]; then
-    echo -e "${RED}오류: 레지스트리 주소를 입력해주세요.${NC}"
-    usage
 fi
 
-REPOSITORY=$1
-TAG=${2:-latest}
+# Check environment file
+ENV_FILE="environments/.env.${ENV}"
+if [ ! -f "$ENV_FILE" ]; then
+    echo -e "${RED}❌ Environment file not found: $ENV_FILE${NC}"
+    exit 1
+fi
+
+# Check requirements.txt
+if [ ! -f "requirements.txt" ]; then
+    echo -e "${RED}❌ requirements.txt not found${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}======================================${NC}"
+echo -e "${BLUE}Building Docker Image${NC}"
+echo -e "${BLUE}======================================${NC}"
+echo -e "${GREEN}Environment:${NC} $ENV"
+echo -e "${GREEN}Image:${NC} $FULL_IMAGE"
+echo -e "${GREEN}Config:${NC} $ENV_FILE"
+echo -e "${BLUE}======================================${NC}"
+echo ""
+
+# Build image
+echo -e "${YELLOW}Building image...${NC}"
+if docker build \
+    --build-arg ENV="$ENV" \
+    -t "$FULL_IMAGE" \
+    .; then
+    echo -e "${GREEN}✓ Build successful: $FULL_IMAGE${NC}"
+    echo ""
+    
+    # Show usage examples
+    case "$ENV" in
+        dev)
+            echo -e "${BLUE}Run in development:${NC}"
+            echo "  docker run -p 8002:8002 -e APP_ENV=dev $FULL_IMAGE"
+            ;;
+        local)
+            echo -e "${BLUE}Run locally with volume mount:${NC}"
+            echo "  docker run -p 8002:8002 -e APP_ENV=local \\"
+            echo "    -v \$(pwd)/app/templates:/app/templates \\"
+            echo "    $FULL_IMAGE"
+            ;;
+        prod)
+            echo -e "${BLUE}Run in production:${NC}"
+            echo "  docker run -p 8002:8002 -e APP_ENV=prod $FULL_IMAGE"
+            echo ""
+            echo -e "${BLUE}To push to registry:${NC}"
+            echo "  docker tag $FULL_IMAGE <registry>/$FULL_IMAGE"
+            echo "  docker push <registry>/$FULL_IMAGE"
+            ;;
+    esac
+else
+    echo -e "${RED}✗ Build failed${NC}"
+    exit 1
+fi
 PUSH=false
 SAVE=false
 BUILD_ENV="prod"  # 기본값: 프로덕션
