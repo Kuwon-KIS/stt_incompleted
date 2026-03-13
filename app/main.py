@@ -1,6 +1,4 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import requests
 import logging
 import time
 import asyncio
@@ -10,60 +8,27 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 import uuid
+
+# Import new modular components
+from .config import config
+from .models import ProcessRequest, BatchProcessRequest, SFTPRequest, ProxyRequest, TemplateCreateRequest, JobStatusResponse
 from .sftp_client import SFTPClient
+from .detection import get_detector
+from .utils import setup_logging, get_credentials_from_env, is_retriable_error
+from .routes import health
 
-# Load environment variables from .env file
-from dotenv import load_dotenv
-
-# Load .env file if it exists
-env_file = pathlib.Path(__file__).parent.parent / ".env"
-if env_file.exists():
-    load_dotenv(env_file)
-else:
-    # Fall back to .env.local, .env.dev or .env.prod based on APP_ENV
-    app_env = os.getenv("APP_ENV", "dev")
-    if app_env == "prod":
-        env_file = pathlib.Path(__file__).parent.parent / ".env.prod"
-    elif app_env == "local":
-        env_file = pathlib.Path(__file__).parent.parent / ".env.local"
-    else:
-        env_file = pathlib.Path(__file__).parent.parent / ".env.dev"
-    
-    if env_file.exists():
-        load_dotenv(env_file)
-
-# Configuration from environment variables
-class Config:
-    CALL_TYPE = os.getenv("CALL_TYPE", "vllm")
-    LLM_URL = os.getenv("LLM_URL")
-    LLM_AUTH_HEADER = os.getenv("LLM_AUTH_HEADER")
-    MODEL_PATH = os.getenv("MODEL_PATH")
-    AGENT_NAME = os.getenv("AGENT_NAME")
-    USE_STREAMING = os.getenv("USE_STREAMING", "false").lower() == "true"
-    SFTP_HOST = os.getenv("SFTP_HOST")
-    SFTP_PORT = int(os.getenv("SFTP_PORT", "22"))
-    SFTP_USERNAME = os.getenv("SFTP_USERNAME")
-    SFTP_PASSWORD = os.getenv("SFTP_PASSWORD")
-    SFTP_KEY = os.getenv("SFTP_KEY")
-    SFTP_CREDENTIAL_NAME = os.getenv("SFTP_CREDENTIAL_NAME")
-    SFTP_ROOT_PATH = os.getenv("SFTP_ROOT_PATH", "/")
-    CALLBACK_URL = os.getenv("CALLBACK_URL")
+# Setup logging
+setup_logging(config.LOG_LEVEL)
     CALLBACK_AUTH_HEADER = os.getenv("CALLBACK_AUTH_HEADER")
     TEMPLATE_NAME = os.getenv("TEMPLATE_NAME", "qwen_default")
     BATCH_CONCURRENCY = int(os.getenv("BATCH_CONCURRENCY", "4"))
     APP_ENV = os.getenv("APP_ENV", "dev")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-config = Config()
-
-logger_init = logging.getLogger(__name__)
-logger_init.info("loaded configuration from environment variables (APP_ENV=%s)", config.APP_ENV)
-
 logger = logging.getLogger(__name__)
-# improve log format with timestamp
-logging.basicConfig(format='%(asctime)s %(levelname)s %(name)s %(message)s', level=logging.INFO)
+logger.info("loaded configuration from environment variables (APP_ENV=%s)", config.APP_ENV)
 
-app = FastAPI()
+app = FastAPI(title="STT Processing System", version="2.0")
 START_TIME = time.time()
 
 # In-memory job store for batch processing: job_id -> {"status": "pending|running|completed", "results": [...], ...}
@@ -71,7 +36,7 @@ JOB_STORE: Dict[str, Any] = {}
 
 # Template store: template_name -> template_content (loaded from files)
 TEMPLATE_STORE: Dict[str, str] = {}
-TEMPLATE_DIR = pathlib.Path(__file__).parent / "templates"
+TEMPLATE_DIR = config.TEMPLATE_DIR
 
 def load_templates():
     """Load all templates from the templates directory into memory."""
@@ -92,29 +57,17 @@ def load_templates():
 # Load templates on startup
 load_templates()
 
-class ProxyRequest(BaseModel):
-    method: str = "GET"
-    url: str
-    headers: dict | None = None
-    data: dict | None = None
-
-@app.get("/")
-async def read_root():
-    logger.info("health root called")
-    return {"message": "ok"}
+# Include health check router
+app.include_router(health.router)
 
 
-@app.get("/healthz")
-async def healthz():
-    """Liveness/Readiness style health endpoint with uptime."""
-    uptime = time.time() - START_TIME
-    now = datetime.now(timezone.utc).isoformat()
-    logger.info("healthz called: uptime=%.2fs", uptime)
-    return {"status": "ok", "uptime_seconds": int(uptime), "time": now}
+# ============= Proxy Endpoint =============
 
 @app.post("/proxy")
 async def proxy(req: ProxyRequest):
+    """Forward requests to external endpoints (for testing/debugging)."""
     try:
+        import requests
         logger.info("proxy request to %s method=%s", req.url, req.method)
         resp = requests.request(req.method, req.url, headers=req.headers, json=req.data, timeout=10)
         logger.info("proxy response status=%s for %s", resp.status_code, req.url)
@@ -123,16 +76,12 @@ async def proxy(req: ProxyRequest):
         logger.exception("proxy failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
-class SFTPRequest(BaseModel):
-    host: str
-    port: int = 22
-    username: str
-    password: str | None = None
-    key: str | None = None
-    path: str = "."
+
+# ============= SFTP Endpoints =============
 
 @app.post("/sftp/list")
 async def sftp_list(req: SFTPRequest):
+    """List files in an SFTP directory."""
     try:
         logger.info("sftp list request host=%s path=%s", req.host, req.path)
         client = SFTPClient(host=req.host, port=req.port, username=req.username, password=req.password, pkey=req.key)
@@ -145,47 +94,7 @@ async def sftp_list(req: SFTPRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class ProcessRequest(BaseModel):
-    # sftp target file
-    host: str | None = None  # if None, use SFTP_HOST from config
-    port: int | None = None  # if None, use SFTP_PORT from config
-    # credential can come from request (for testing) or from env var (for production)
-    username: str | None = None  # if None, use SFTP_USERNAME from config
-    password: str | None = None  # if None, use SFTP_PASSWORD from config
-    key: str | None = None  # if None, use SFTP_KEY from config
-    # if credential_name is provided, load from env: SFTP_CRED_{credential_name}_{USERNAME,PASSWORD,KEY}
-    credential_name: str | None = None  # if None, use SFTP_CREDENTIAL_NAME from config
-    remote_path: str | None = None  # required when not using inline_text
-    
-    # LLM call configuration (all optional, defaults from config)
-    call_type: str | None = None  # "vllm" or "agent", defaults to config.CALL_TYPE
-    llm_url: str | None = None  # defaults to config.LLM_URL
-    llm_auth_header: str | None = None  # defaults to config.LLM_AUTH_HEADER
-    
-    # vLLM specific
-    model_path: str | None = None  # defaults to config.MODEL_PATH
-    
-    # Agent specific
-    agent_name: str | None = None  # defaults to config.AGENT_NAME
-    use_streaming: bool | None = None  # defaults to config.USE_STREAMING
-    
-    # callback url to forward model result
-    callback_url: str | None = None  # defaults to config.CALLBACK_URL
-    callback_auth_header: str | None = None  # defaults to config.CALLBACK_AUTH_HEADER
-    
-    # optional: provide inline text to bypass SFTP (useful for testing)
-    inline_text: str | None = None
-    
-    # Template and prompt configuration
-    template_name: str | None = None  # defaults to config.TEMPLATE_NAME
-    question: str | None = None  # question/task to pass to the template
-    custom_prompt: str | None = None  # if provided, use this instead of template
-    
-    def resolve_config(self):
-        """Resolve all None values from config defaults."""
-        # SFTP settings
-        if self.host is None:
-            self.host = config.SFTP_HOST
+# ============= Process Endpoints =============
         if self.port is None:
             self.port = config.SFTP_PORT
         if self.username is None:
