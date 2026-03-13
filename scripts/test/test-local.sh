@@ -1,5 +1,10 @@
 #!/bin/bash
 # Local testing script - runs uvicorn and validates service
+# Usage: ./scripts/test/test-local.sh [port]
+
+# Get project root directory
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Color definitions
 RED='\033[0;31m'
@@ -22,7 +27,7 @@ sleep 2
 
 # Start service in background using conda
 echo -e "${YELLOW}Starting uvicorn on port $PORT...${NC}"
-conda run -n stt-py311 bash -c "cd $(pwd) && uvicorn app.main:app --host 127.0.0.1 --port $PORT" > /tmp/uvicorn.log 2>&1 &
+conda run -n stt-py311 bash -c "cd $PROJECT_ROOT && uvicorn app.main:app --host 127.0.0.1 --port $PORT" > /tmp/uvicorn.log 2>&1 &
 UVICORN_PID=$!
 echo -e "${GREEN}✓ Process started (PID: $UVICORN_PID)${NC}"
 echo ""

@@ -1,11 +1,8 @@
-# Configuration files
+# Configuration files (all .env files are sensitive - never commit)
 .env
 .env.local
 .env.dev
 .env.prod
-environments/.env.local
-environments/.env.dev
-environments/.env.prod
 
 # Python
 __pycache__/
