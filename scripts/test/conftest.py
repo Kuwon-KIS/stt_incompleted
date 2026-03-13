@@ -2,6 +2,13 @@
 Pytest configuration and fixtures for STT processing system tests.
 """
 
+import sys
+import pathlib
+
+# Add project root to Python path so we can import app module
+PROJECT_ROOT = pathlib.Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock, patch
