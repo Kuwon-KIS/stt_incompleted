@@ -68,11 +68,11 @@ def process_sync(req: ProcessRequest) -> dict:
     logger.info("built prompt length=%d", len(prompt))
 
     # 2) Call detection strategy (vLLM or Agent)
-    logger.info("calling detection service type=%s", req.call_type)
+    logger.info("calling detection service type=%s", config.CALL_TYPE)
     
     try:
         # This would be async in production, but kept sync for now
-        detector = get_detector(req.call_type, config)
+        detector = get_detector(config.CALL_TYPE, config)
         detection_result = asyncio.run(detector.detect(text, prompt))
         logger.info("detection completed: issues=%d", len(detection_result.get("detected_issues", [])))
     except Exception as e:
@@ -86,7 +86,7 @@ def process_sync(req: ProcessRequest) -> dict:
             callback_payload = {
                 "llm_output": detection_result,
                 "remote_path": req.remote_path,
-                "call_type": req.call_type,
+                "call_type": config.CALL_TYPE,
                 "detected_issues": detection_result.get("detected_issues", []),
             }
             resp = requests.post(req.callback_url, json=callback_payload, timeout=30,
