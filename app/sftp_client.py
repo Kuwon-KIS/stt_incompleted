@@ -3,8 +3,90 @@ import paramiko
 from typing import List, Optional
 import io
 import base64
+from datetime import datetime, timedelta
+from .config import config
 
 logger = logging.getLogger(__name__)
+
+class MockSFTPClient:
+    """Mock SFTP client for local development and testing.
+    
+    Returns dummy directory and file listings without connecting to a real server.
+    Simulates the structure of a production SFTP server.
+    """
+    def __init__(self, host: str, port: int = 22, username: Optional[str] = None, 
+                 password: Optional[str] = None, pkey: Optional[str] = None, timeout: int = 10):
+        logger.info("Using MockSFTPClient (APP_ENV=local) - no real SFTP connection")
+        self.host = host
+        self.port = port
+        self.username = username
+        # Generate dummy date directories: today, yesterday, day before yesterday
+        today = datetime.now()
+        self.mock_dates = [
+            (today - timedelta(days=2)).strftime("%Y%m%d"),
+            (today - timedelta(days=1)).strftime("%Y%m%d"),
+            today.strftime("%Y%m%d"),
+        ]
+        # Sample files for each date (file names are timestamps with .txt extension)
+        self.mock_files = {
+            date: [
+                f"{date}_001.txt",
+                f"{date}_002.txt",
+                f"{date}_003.txt",
+            ]
+            for date in self.mock_dates
+        }
+    
+    def listdir(self, path: str = ".") -> List[str]:
+        """Mock listdir - returns date directories and files."""
+        logger.debug("MockSFTPClient.listdir path=%s", path)
+        # Root returns date directories
+        if path == "/" or path == ".":
+            return self.mock_dates
+        # Subdirectory returns files
+        for date in self.mock_dates:
+            if path == f"/{date}" or path == date:
+                return self.mock_files[date]
+        return []
+    
+    def list_files(self, path: str, suffix: Optional[str] = None) -> List[str]:
+        """Mock list_files - returns files in directory with optional suffix filter."""
+        logger.debug("MockSFTPClient.list_files path=%s suffix=%s", path, suffix)
+        files = self.listdir(path)
+        if suffix:
+            files = [f for f in files if f.endswith(suffix)]
+        return files
+    
+    def list_directories(self, path: str) -> List[str]:
+        """Mock list_directories - returns subdirectories."""
+        logger.debug("MockSFTPClient.list_directories path=%s", path)
+        # Root contains date directories
+        if path == "/" or path == ".":
+            return self.mock_dates
+        return []
+    
+    def read_file(self, path: str) -> str:
+        """Mock read_file - returns dummy content for testing."""
+        logger.debug("MockSFTPClient.read_file path=%s", path)
+        # Return sample text content that can be processed
+        sample_content = """고객과의 통화 기록
+시간: 2026-03-16 10:00:00
+상담사: 홍길동
+고객명: 김철수
+
+상담내용:
+- 상품 설명: 우리 신상품 XX는 매우 좋은 제품입니다.
+- 가격: 299,000원입니다.
+- 특징: 최고의 품질과 가성비를 자랑합니다.
+- 구매 권유: 지금 구매하시면 특별 할인이 있습니다.
+
+결과: 고객이 구매에 동의했습니다.
+"""
+        return sample_content
+    
+    def close(self):
+        """Mock close - no-op."""
+        logger.debug("MockSFTPClient.close")
 
 class SFTPClient:
     """Lightweight wrapper around Paramiko SFTP.
@@ -150,3 +232,24 @@ class SFTPClient:
                 self.client.close()
         except Exception:
             pass
+
+def create_sftp_client(host: str, port: int = 22, username: Optional[str] = None, 
+                       password: Optional[str] = None, pkey: Optional[str] = None, 
+                       timeout: int = 10):
+    """Factory function to create appropriate SFTP client based on environment.
+    
+    Args:
+        host: SFTP server hostname
+        port: SFTP server port (default: 22)
+        username: Username for authentication
+        password: Password for authentication
+        pkey: SSH private key (file path or base64-encoded content)
+        timeout: Connection timeout in seconds
+        
+    Returns:
+        MockSFTPClient if APP_ENV=local, otherwise real SFTPClient
+    """
+    if config.APP_ENV == "local":
+        return MockSFTPClient(host, port, username, password, pkey, timeout)
+    else:
+        return SFTPClient(host, port, username, password, pkey, timeout)

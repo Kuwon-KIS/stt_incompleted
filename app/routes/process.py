@@ -15,7 +15,7 @@ from typing import Dict, Any
 
 from ..config import config
 from ..models import ProcessRequest, BatchProcessRequest
-from ..sftp_client import SFTPClient
+from ..sftp_client import SFTPClient, create_sftp_client
 from ..detection import get_detector
 from ..utils import get_credentials_from_env
 
@@ -52,8 +52,8 @@ def process_sync(req: ProcessRequest) -> dict:
         if not req.remote_path:
             raise ValueError("remote_path is required when inline_text is not provided")
         
-        client = SFTPClient(host=req.host, port=req.port, username=creds["username"], 
-                          password=creds["password"], pkey=creds["key"])
+        client = create_sftp_client(host=req.host, port=req.port, username=creds["username"],
+                                    password=creds["password"], pkey=creds["key"])
         try:
             text = client.read_file(req.remote_path)
         finally:
@@ -131,8 +131,8 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
         
         # Connect to SFTP and discover files
         logger.info("batch job %s: processing date range %s to %s", job_id, req.start_date, req.end_date)
-        client = SFTPClient(host=req.host, port=req.port, username=creds["username"], 
-                          password=creds["password"], pkey=creds["key"])
+        client = create_sftp_client(host=req.host, port=req.port, username=creds["username"],
+                                    password=creds["password"], pkey=creds["key"])
         
         try:
             # Convert date strings to comparable integers

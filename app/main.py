@@ -86,3 +86,45 @@ templates.set_template_store(TEMPLATE_STORE, config.TEMPLATE_DIR)
 app.include_router(templates.router)
 
 logger.info("STT Processing System initialized (ENV=%s)", config.APP_ENV)
+
+# Mock endpoints for local development
+@app.post("/mock/agent/{agent_name}/messages")
+async def mock_agent_endpoint(agent_name: str, payload: Dict[str, Any]):
+    """Mock AI Agent endpoint for local testing.
+    
+    Returns a mock detection result without calling real AI agent.
+    """
+    logger.debug("Mock agent endpoint called: agent=%s", agent_name)
+    
+    try:
+        # Extract user query and context from payload
+        params = payload.get("parameters", {})
+        user_query = params.get("user_query", "")
+        context = params.get("context", "")
+        
+        # Mock detection logic - simulates agent analysis
+        # In real scenario, this would call actual AI agent API
+        # AgentDetector expects "result" field with completion text
+        mock_completion = """분석 결과:
+1. 불완전한 판매 요소 감지:
+   - 상품 설명 불충분: 주요 특징과 이점을 더 명확하게 설명해야 함
+   - 고객 요구사항 확인 부족: 고객의 실제 필요를 더 깊이 있게 파악해야 함
+   
+2. 개선 필요 부분:
+   - 가격 협상 시 논거 약함
+   - 구매 의사 확인이 명확하지 않음
+   
+3. 종합 평가: 전반적으로 양호하나 마무리 부분 개선 권장"""
+        
+        mock_result = {
+            "result": mock_completion,
+            "status": "success",
+            "processing_time_ms": 150
+        }
+        
+        logger.info("Mock agent response: agent=%s", agent_name)
+        
+        return mock_result
+    except Exception as e:
+        logger.error("Mock agent endpoint error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
