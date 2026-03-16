@@ -91,24 +91,6 @@
                                 <input type="date" id="end-date" required>
                             </div>
 
-                            <!-- LLM Settings -->
-                            <div class="form-group">
-                                <label>탐지 방식</label>
-                                <select id="call-type" required>
-                                    <option value="vllm">vLLM</option>
-                                    <option value="agent">AI Agent</option>
-                                </select>
-                            </div>
-
-                            <!-- Template Selection (only for vLLM) -->
-                            <div class="form-group">
-                                <label>템플릿 <span class="note">(vLLM만 필요)</span></label>
-                                <select id="template-select" required>
-                                    <option value="qwen_default">Qwen 기본</option>
-                                    <option value="generic">일반</option>
-                                </select>
-                            </div>
-
                             <!-- Submit Buttons -->
                             <div class="form-actions">
                                 <button type="submit" class="btn btn-primary">처리 시작</button>

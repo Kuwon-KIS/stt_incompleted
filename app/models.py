@@ -118,21 +118,6 @@ class BatchProcessRequest(BaseModel):
     start_date: str
     end_date: str
     
-    # LLM call configuration
-    call_type: str | None = None
-    llm_url: str | None = None
-    llm_auth_header: str | None = None
-    model_path: str | None = None
-    agent_name: str | None = None
-    use_streaming: bool | None = None
-    
-    # Callback settings
-    callback_url: str | None = None
-    callback_auth_header: str | None = None
-    
-    # Template
-    template_name: str | None = None
-    
     def resolve_config(self, config):
         """Resolve all None values from config defaults."""
         # SFTP settings

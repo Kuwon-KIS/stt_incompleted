@@ -585,8 +585,7 @@ Body:
   "password": "pass",
   "root_path": "/uploads",
   "start_date": "20260301",  ← YYYYMMDD 형식
-  "end_date": "20260305",     ← YYYYMMDD 형식
-  "call_type": "vllm"
+  "end_date": "20260305"     ← YYYYMMDD 형식
 }
 
 처리:

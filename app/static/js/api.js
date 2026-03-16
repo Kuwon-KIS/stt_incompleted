@@ -67,8 +67,6 @@ class API {
         return this.post('/process/batch/submit', {
             start_date: batchData.startDate,
             end_date: batchData.endDate,
-            call_type: batchData.callType,
-            template_name: batchData.templateName,
         });
     }
 
@@ -86,8 +84,6 @@ class API {
         return this.post('/process/batch', {
             start_date: batchData.startDate,
             end_date: batchData.endDate,
-            call_type: batchData.callType,
-            template_name: batchData.templateName,
         });
     }
 
@@ -140,8 +136,6 @@ class API {
         return this.post('/process', {
             remote_path: processData.remotePath || null,
             inline_text: processData.inlineText || null,
-            call_type: processData.callType,
-            template_name: processData.templateName,
         });
     }
 

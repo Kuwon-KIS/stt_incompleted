@@ -40,20 +40,6 @@ class App {
             this.handleBatchSubmit();
         });
 
-        // 탐지 방식 변경 이벤트 (템플릿 활성화/비활성화)
-        document.getElementById('call-type').addEventListener('change', (e) => {
-            const templateSelect = document.getElementById('template-select');
-            if (e.target.value === 'agent') {
-                // AI Agent 선택: 템플릿 비활성화
-                templateSelect.disabled = true;
-                templateSelect.required = false;
-            } else {
-                // vLLM 선택: 템플릿 활성화
-                templateSelect.disabled = false;
-                templateSelect.required = true;
-            }
-        });
-
         // 템플릿 관리 폼
         document.getElementById('template-form').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -169,8 +155,6 @@ class App {
     async handleBatchSubmit() {
         const startDateInput = document.getElementById('start-date').value;
         const endDateInput = document.getElementById('end-date').value;
-        const callType = document.getElementById('call-type').value;
-        const templateName = document.getElementById('template-select').value;
 
         // HTML date input을 YYYYMMDD 형식으로 변환 (예: 2026-03-16 → 20260316)
         const startDate = startDateInput.replace(/-/g, '');
@@ -196,8 +180,6 @@ class App {
             const response = await api.submitBatch({
                 startDate,
                 endDate,
-                callType,
-                templateName: callType === 'agent' ? null : templateName,  // AI Agent일 때는 템플릿 미전송
             });
 
             const jobId = response.job_id;

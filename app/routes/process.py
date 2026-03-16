@@ -182,8 +182,6 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     key=creds["key"],
                     credential_name=None,
                     remote_path=full_path,
-                    call_type=req.call_type,
-                    template_name=req.template_name,
                 )
                 
                 future = executor.submit(process_sync, process_req)

@@ -111,15 +111,6 @@ def sample_batch_request():
         root_path="/uploads",
         start_date="20260301",
         end_date="20260305",
-        call_type="vllm",
-        llm_url="http://localhost:8001/v1/chat/completions",
-        llm_auth_header=None,
-        model_path="test_model",
-        agent_name=None,
-        use_streaming=False,
-        callback_url=None,
-        callback_auth_header=None,
-        template_name="generic"
     )
 
 
