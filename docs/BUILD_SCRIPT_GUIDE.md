@@ -114,7 +114,7 @@ The build scripts now support optional flags for Docker operations:
 - Builds Docker image
 - Exports tar.gz to output/
 - Loads image into Docker daemon
-- Runs test container: `stt-post-review-dev-test` or `stt-post-review-prod-test`
+- Runs test container: `stt-post-review-test` or `stt-post-review-test`
 - Waits for container to be ready (30 attempts × 1s)
 - Validates 5 health check endpoints:
   - `/health`
@@ -126,7 +126,7 @@ The build scripts now support optional flags for Docker operations:
 
 **Example output:**
 ```
-✓ Container running: stt-post-review-dev-test
+✓ Container running: stt-post-review-test
 Port: 8002
 Ports: 0.0.0.0:8002->8000/tcp
 
@@ -177,8 +177,8 @@ curl http://localhost:8002/health
 curl http://localhost:8002/templates
 
 # When done, clean up:
-docker stop stt-post-review-dev-test
-docker rm stt-post-review-dev-test
+docker stop stt-post-review-test
+docker rm stt-post-review-test
 ```
 
 ### Workflow 2: Prepare for Remote Deployment
@@ -211,8 +211,8 @@ Full workflow with local verification:
 # 2. Health checks should all pass - review output
 
 # 3. Clean up test container
-docker stop stt-post-review-prod-test
-docker rm stt-post-review-prod-test
+docker stop stt-post-review-test
+docker rm stt-post-review-test
 
 # 4. Transfer verified image to production
 scp output/stt-post-review-prod-1.0.0.tar.gz prod-server:/opt/images/
@@ -236,15 +236,15 @@ echo "Building version $VERSION..."
 ./scripts/build/build-prod.sh "$VERSION" --run
 
 echo "Extracting container logs..."
-docker logs stt-post-review-prod-test
+docker logs stt-post-review-test
 
 echo "Pushing to registry..."
 docker tag stt-post-review:$VERSION my-registry/stt-post-review:$VERSION
 docker push my-registry/stt-post-review:$VERSION
 
 echo "Cleaning up..."
-docker stop stt-post-review-prod-test
-docker rm stt-post-review-prod-test
+docker stop stt-post-review-test
+docker rm stt-post-review-test
 
 echo "✓ Build and push complete!"
 ```

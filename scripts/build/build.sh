@@ -59,7 +59,7 @@ IMAGE_TAG="${VERSION}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 TAR_FILENAME="stt-post-review-${VERSION}.tar.gz"
 TAR_FILEPATH="${OUTPUT_DIR}/${TAR_FILENAME}"
-CONTAINER_NAME="stt-post-review-${ENV}-test"
+CONTAINER_NAME="stt-post-review-test"
 
 # ============================================================================
 # Utility Functions
