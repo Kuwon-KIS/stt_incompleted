@@ -45,7 +45,7 @@ Build image and export as compressed tar.gz. Does NOT load into Docker or run co
 ```
 
 **Output:**
-- Image: `stt-post-review:dev-latest` or `stt-post-review:dev-1.0.0`
+- Image: `stt-post-review:latest` or `stt-post-review:dev-1.0.0`
 - File: `output/stt-post-review-dev-latest.tar.gz` or `output/stt-post-review-dev-1.0.0.tar.gz`
 - Metadata: `output/.build_metadata`
 - Deployment instructions displayed
@@ -197,7 +197,7 @@ scp output/stt-post-review-prod-1.0.0.tar.gz user@server:/tmp/
 
 # 4. On remote server, load and run
 # docker load < /tmp/stt-post-review-prod-1.0.0.tar.gz
-# docker run -d -p 8000:8000 stt-post-review:prod-1.0.0
+# docker run -d -p 8000:8000 stt-post-review:1.0.0
 ```
 
 ### Workflow 3: Build, Verify, Deploy
@@ -219,7 +219,7 @@ scp output/stt-post-review-prod-1.0.0.tar.gz prod-server:/opt/images/
 
 # 5. On production, load and run
 # docker load < /opt/images/stt-post-review-prod-1.0.0.tar.gz
-# docker run -d -p 8000:8000 --env-file .env.prod stt-post-review:prod-1.0.0
+# docker run -d -p 8000:8000 --env-file .env.prod stt-post-review:1.0.0
 ```
 
 ### Workflow 4: CI/CD Pipeline Integration
@@ -239,7 +239,7 @@ echo "Extracting container logs..."
 docker logs stt-post-review-prod-test
 
 echo "Pushing to registry..."
-docker tag stt-post-review:prod-$VERSION my-registry/stt-post-review:$VERSION
+docker tag stt-post-review:$VERSION my-registry/stt-post-review:$VERSION
 docker push my-registry/stt-post-review:$VERSION
 
 echo "Cleaning up..."
@@ -383,7 +383,7 @@ environments/
 ./scripts/build/build-dev.sh
 
 # But run with production environment
-docker run -e APP_ENV=prod stt-post-review:dev-latest
+docker run -e APP_ENV=prod stt-post-review:latest
 ```
 
 ## Output Directory Structure

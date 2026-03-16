@@ -55,9 +55,9 @@ done
 
 # Calculate image tag
 IMAGE_NAME="stt-post-review"
-IMAGE_TAG="${ENV}-${VERSION}"
+IMAGE_TAG="${VERSION}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
-TAR_FILENAME="stt-post-review-${IMAGE_TAG}.tar.gz"
+TAR_FILENAME="stt-post-review-${VERSION}.tar.gz"
 TAR_FILEPATH="${OUTPUT_DIR}/${TAR_FILENAME}"
 CONTAINER_NAME="stt-post-review-${ENV}-test"
 
@@ -188,7 +188,7 @@ docker images | grep "$IMAGE_NAME" | grep "$ENV"
 # Step 5: Export image as tar.gz
 log_step "5" "Export image as compressed tar.gz"
 
-TAR_FILENAME="stt-post-review-${IMAGE_TAG}.tar.gz"
+TAR_FILENAME="stt-post-review-${VERSION}.tar.gz"
 TAR_FILEPATH="${OUTPUT_DIR}/${TAR_FILENAME}"
 
 echo "Export format: tar.gz"

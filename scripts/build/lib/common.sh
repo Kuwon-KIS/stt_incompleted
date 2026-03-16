@@ -78,7 +78,7 @@ check_docker_daemon() {
 get_image_tag() {
     local env=$1
     local version=$2
-    echo "stt-post-review:${env}-${version}"
+    echo "stt-post-review:${version}"
 }
 
 # Get tar.gz filename
