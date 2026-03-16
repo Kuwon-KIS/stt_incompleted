@@ -1,32 +1,28 @@
 #!/bin/bash
 # Docker build script - builds image based on environment with image export
-# Usage: ./scripts/build/build.sh [dev|local|prod] [version]
+# Usage: ./scripts/build/build.sh [env] [version] [--load] [--run]
 # 
-# Examples:
-#   ./scripts/build/build.sh dev              # stt-service:dev-latest
-#   ./scripts/build/build.sh dev 1.0.0        # stt-service:dev-1.0.0
-#   ./scripts/build/build.sh prod v1.0.0      # stt-service:prod-v1.0.0
+# Arguments:
+#   env              - dev, local, or prod (default: dev)
+#   version          - version tag (default: latest)
+#   --load           - Load image to Docker after build
+#   --run            - Load image and run container for testing
 #
-# Features:
-#   - Build Docker image for specific environment
-#   - Optional version specification (defaults to 'latest')
-#   - Export as compressed .tar.gz for deployment
-#   - Parallel compression with pigz (if available)
-#   - Build logging and metadata tracking
-#   - Optional rebuild with existing image detection
+# Examples:
+#   ./scripts/build/build.sh dev              # Build and export only
+#   ./scripts/build/build.sh dev 1.0.0        # Build specific version
+#   ./scripts/build/build.sh dev 1.0.0 --load # Build and load to Docker
+#   ./scripts/build/build.sh dev 1.0.0 --run  # Build, load, and run container
 
 set -e
 
-# Get project root directory
+# Get project root and source utilities
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Color definitions
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+# Source common functions
+source "${PROJECT_ROOT}/scripts/build/lib/common.sh"
+source "${PROJECT_ROOT}/scripts/build/lib/docker-utils.sh"
 
 # Setup paths
 OUTPUT_DIR="./output"
@@ -36,9 +32,34 @@ START_TIME=$(date +%s)
 # Parse arguments
 ENV="${1:-dev}"
 VERSION="${2:-latest}"
-IMAGE_NAME="stt-service"
+LOAD_IMAGE=false
+RUN_CONTAINER=false
+
+# Check for optional flags
+while [[ $# -gt 2 ]]; do
+    case "$3" in
+        --load)
+            LOAD_IMAGE=true
+            shift
+            ;;
+        --run)
+            LOAD_IMAGE=true
+            RUN_CONTAINER=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# Calculate image tag
+IMAGE_NAME="stt-post-review"
 IMAGE_TAG="${ENV}-${VERSION}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+TAR_FILENAME="stt-post-review-${IMAGE_TAG}.tar.gz"
+TAR_FILEPATH="${OUTPUT_DIR}/${TAR_FILENAME}"
+CONTAINER_NAME="stt-post-review-${ENV}-test"
 
 # ============================================================================
 # Utility Functions
@@ -167,7 +188,7 @@ docker images | grep "$IMAGE_NAME" | grep "$ENV"
 # Step 5: Export image as tar.gz
 log_step "5" "Export image as compressed tar.gz"
 
-TAR_FILENAME="${IMAGE_NAME}-${IMAGE_TAG}-$(date +%Y%m%d).tar.gz"
+TAR_FILENAME="stt-post-review-${IMAGE_TAG}.tar.gz"
 TAR_FILEPATH="${OUTPUT_DIR}/${TAR_FILENAME}"
 
 echo "Export format: tar.gz"
@@ -251,15 +272,54 @@ echo "────────────────────────�
 ls -lh "${OUTPUT_DIR}" | grep -E "tar\.gz|build-info" | head -5 | awk '{print "  " $9 " (" $5 ")"}'
 echo ""
 
-echo -e "${BLUE}🚀 Deployment${NC}"
-echo "─────────────────────────────────────"
-echo "Copy to target server:"
-echo "  scp $TAR_FILEPATH user@target:/path/"
-echo ""
-echo "Load on target:"
-echo "  docker load -i $TAR_FILENAME"
-echo ""
+# Step 6: Optional - Load image to Docker
+if [ "$LOAD_IMAGE" = true ]; then
+    echo -e "${BLUE}Step 6: Load image to Docker${NC}"
+    echo ""
+    
+    if docker_load_image "$TAR_FILEPATH" "$FULL_IMAGE"; then
+        docker_validate_image "$FULL_IMAGE"
+        
+        # Step 7: Optional - Run container for testing
+        if [ "$RUN_CONTAINER" = true ]; then
+            echo ""
+            log_step "7" "Run container for testing"
+            
+            ENV_FILE="environments/.env.${ENV}"
+            if docker_run_container "$FULL_IMAGE" "$CONTAINER_NAME" 8002 "$ENV_FILE"; then
+                sleep 2
+                
+                if docker_wait_ready "$CONTAINER_NAME" 30; then
+                    docker_health_check "$CONTAINER_NAME" 8002
+                    docker_show_info "$CONTAINER_NAME" 8002
+                else
+                    log_error "Container failed to become ready"
+                fi
+            else
+                log_error "Failed to run container"
+            fi
+        fi
+    else
+        log_error "Failed to load image"
+    fi
+else
+    echo -e "${BLUE}🚀 Deployment${NC}"
+    echo "─────────────────────────────────────"
+    echo "To load and test image:"
+    echo "  $0 $ENV $VERSION --load"
+    echo ""
+    echo "To load, run, and test:"
+    echo "  $0 $ENV $VERSION --run"
+    echo ""
+    echo "To copy to target server:"
+    echo "  scp $TAR_FILEPATH user@target:/path/"
+    echo ""
+    echo "On target server, load image:"
+    echo "  docker load -i $TAR_FILENAME"
+    echo ""
+fi
 
-echo -e "${GREEN}✅ All steps completed successfully!${NC}"
+echo -e "${GREEN}✅ Build completed successfully!${NC}"
 echo ""
 echo "📝 Detailed log: $BUILD_LOG"
+

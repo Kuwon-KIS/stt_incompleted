@@ -1,11 +1,14 @@
 #!/bin/bash
-# Build production environment image with tar.gz export
-# Usage: ./scripts/build/build-prod.sh [version]
-# 
+# Build production environment image with optional tar.gz loading and testing
+# Usage: ./scripts/build/build-prod.sh [version] [--load] [--run]
+#
 # Examples:
-#   ./scripts/build/build-prod.sh           # stt-service:prod-latest
-#   ./scripts/build/build-prod.sh 1.0.0     # stt-service:prod-1.0.0
+#   ./scripts/build/build-prod.sh                # Build only
+#   ./scripts/build/build-prod.sh 1.0.0          # Build specific version
+#   ./scripts/build/build-prod.sh 1.0.0 --load   # Build and load to Docker
+#   ./scripts/build/build-prod.sh 1.0.0 --run    # Build, load, and run for testing
 
 VERSION="${1:-latest}"
+shift || true
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-exec ./scripts/build/build.sh prod "$VERSION"
+exec ./scripts/build/build.sh prod "$VERSION" "$@"

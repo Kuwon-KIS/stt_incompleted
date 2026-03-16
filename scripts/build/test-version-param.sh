@@ -69,9 +69,9 @@ echo ""
 # Test 4: Show example tar.gz filenames
 echo -e "${YELLOW}Test 4: Expected tar.gz output filenames${NC}"
 EXAMPLES=(
-    "stt-service-dev-latest-$(date +%Y%m%d).tar.gz"
-    "stt-service-dev-1.0.0-$(date +%Y%m%d).tar.gz"
-    "stt-service-prod-v2.0.0-$(date +%Y%m%d).tar.gz"
+    "stt-post-review-dev-latest-$(date +%Y%m%d).tar.gz"
+    "stt-post-review-dev-1.0.0-$(date +%Y%m%d).tar.gz"
+    "stt-post-review-prod-v2.0.0-$(date +%Y%m%d).tar.gz"
 )
 for example in "${EXAMPLES[@]}"; do
     echo -e "   ${GREEN}output/$example${NC}"
@@ -82,7 +82,7 @@ echo -e "${BLUE}═════════════════════�
 echo -e "${GREEN}✓ Version parameter handling verified${NC}"
 echo ""
 echo -e "${BLUE}Usage Examples:${NC}"
-echo "   ./scripts/build/build-dev.sh             # stt-service:dev-latest"
-echo "   ./scripts/build/build-dev.sh 1.0.0       # stt-service:dev-1.0.0"
-echo "   ./scripts/build/build.sh prod v2.0.0     # stt-service:prod-v2.0.0"
+echo "   ./scripts/build/build-dev.sh             # stt-post-review:dev-latest"
+echo "   ./scripts/build/build-dev.sh 1.0.0       # stt-post-review:dev-1.0.0"
+echo "   ./scripts/build/build.sh prod v2.0.0     # stt-post-review:prod-v2.0.0"
 echo ""
