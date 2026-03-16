@@ -586,15 +586,14 @@ Body:
   "root_path": "/uploads",
   "start_date": "20260301",  ← YYYYMMDD 형식
   "end_date": "20260305",     ← YYYYMMDD 형식
-  "call_type": "vllm",
-  "batch_concurrency": 4      ← 동시 처리 개수
+  "call_type": "vllm"
 }
 
 처리:
 1. SFTP 연결
 2. /uploads/20260301/, /uploads/20260302/ 등 폴더 탐색
 3. 각 폴더의 .txt 파일 발견
-4. ThreadPoolExecutor로 최대 4개 파일 동시 처리
+4. ThreadPoolExecutor로 동시 처리 (동시 수는 BATCH_CONCURRENCY 환경변수로 설정, 기본값: 4)
 5. 각 파일마다 위의 vLLM/Agent 로직 실행
 6. 결과를 job_id로 저장 (비동기)
 7. 즉시 job_id 반환
@@ -730,8 +729,7 @@ curl -X POST http://localhost:8002/process \
     "vllm_url": "http://qwen-api:8000/infer",
     "callback_url": "http://callback-handler:5000/process",
     "inline_text": "The quick brown fox jumps over the lazy dog.",
-    "template_name": "qwen_default",
-    "question": "Summarize this text."
+    "template_name": "qwen_default"
   }'
 ```
 
@@ -772,25 +770,7 @@ curl -X POST http://localhost:8002/process \
   }'
 ```
 
-#### 5.5 Custom Prompt 사용 (인라인)
-
-Template을 거치지 않고 커스텀 프롬프트를 직접 전달:
-
-```bash
-curl -X POST http://localhost:8002/process \
-  -H "Content-Type: application/json" \
-  -d '{
-    "host": "sftp.example.com",
-    "username": "user",
-    "password": "pass",
-    "remote_path": "/path/to/file.txt",
-    "vllm_url": "http://vllm-api:8000/infer",
-    "callback_url": "http://callback-handler:5000/process",
-    "custom_prompt": "Translate to Spanish: Hello world"
-  }'
-```
-
-#### 5.6 새 Template 생성
+#### 5.5 새 Template 생성
 
 ```bash
 curl -X POST http://localhost:8002/templates \
@@ -813,7 +793,7 @@ curl -X DELETE http://localhost:8002/templates/my_custom_template
 curl -X POST http://localhost:8002/templates/refresh
 ```
 
-### 6. 동기 배치 처리 (날짜 범위로 파일 자동 발견)
+### 5.8 동기 배치 처리 (날짜 범위로 파일 자동 발견)
 
 ```bash
 curl -X POST http://localhost:8002/process/batch \
@@ -827,9 +807,7 @@ curl -X POST http://localhost:8002/process/batch \
     "root_path": "/data",
     "vllm_url": "http://vllm-api:8000/infer",
     "callback_url": "http://callback-handler:5000/process",
-    "template_name": "qwen_default",
-    "question": "Summarize the contents",
-    "concurrency": 4
+    "template_name": "qwen_default"
   }'
 ```
 
@@ -874,8 +852,7 @@ curl -X POST http://localhost:8002/process/batch/submit \
     "root_path": "/data",
     "vllm_url": "http://vllm-api:8000/infer",
     "callback_url": "http://callback-handler:5000/process",
-    "template_name": "qwen_default",
-    "concurrency": 4
+    "template_name": "qwen_default"
   }'
 ```
 

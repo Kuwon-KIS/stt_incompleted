@@ -50,10 +50,8 @@ class ProcessRequest(BaseModel):
     # Optional inline text for testing
     inline_text: str | None = None
     
-    # Template and prompt configuration
+    # Template configuration
     template_name: str | None = None
-    question: str | None = None
-    custom_prompt: str | None = None
     
     def resolve_config(self, config):
         """Resolve all None values from config defaults."""
@@ -132,10 +130,8 @@ class BatchProcessRequest(BaseModel):
     callback_url: str | None = None
     callback_auth_header: str | None = None
     
-    # Template and prompt
+    # Template
     template_name: str | None = None
-    question: str | None = None
-    custom_prompt: str | None = None
     
     def resolve_config(self, config):
         """Resolve all None values from config defaults."""

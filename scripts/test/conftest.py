@@ -94,9 +94,7 @@ def sample_process_request():
         use_streaming=False,
         callback_url=None,
         callback_auth_header=None,
-        template_name="generic",
-        question=None,
-        custom_prompt=None
+        template_name="generic"
     )
 
 
@@ -121,10 +119,7 @@ def sample_batch_request():
         use_streaming=False,
         callback_url=None,
         callback_auth_header=None,
-        template_name="generic",
-        question=None,
-        custom_prompt=None,
-        concurrency=2
+        template_name="generic"
     )
 
 

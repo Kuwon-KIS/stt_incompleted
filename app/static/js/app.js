@@ -171,7 +171,6 @@ class App {
         const endDateInput = document.getElementById('end-date').value;
         const callType = document.getElementById('call-type').value;
         const templateName = document.getElementById('template-select').value;
-        const question = document.getElementById('question').value;
 
         // HTML date input을 YYYYMMDD 형식으로 변환 (예: 2026-03-16 → 20260316)
         const startDate = startDateInput.replace(/-/g, '');
@@ -199,7 +198,6 @@ class App {
                 endDate,
                 callType,
                 templateName: callType === 'agent' ? null : templateName,  // AI Agent일 때는 템플릿 미전송
-                question,
             });
 
             const jobId = response.job_id;

@@ -68,10 +68,7 @@ class API {
             start_date: batchData.startDate,
             end_date: batchData.endDate,
             call_type: batchData.callType,
-            concurrency: batchData.concurrency,
             template_name: batchData.templateName,
-            question: batchData.question || '',
-            custom_prompt: batchData.customPrompt || '',
         });
     }
 
@@ -90,10 +87,7 @@ class API {
             start_date: batchData.startDate,
             end_date: batchData.endDate,
             call_type: batchData.callType,
-            concurrency: batchData.concurrency,
             template_name: batchData.templateName,
-            question: batchData.question || '',
-            custom_prompt: batchData.customPrompt || '',
         });
     }
 
@@ -148,8 +142,6 @@ class API {
             inline_text: processData.inlineText || null,
             call_type: processData.callType,
             template_name: processData.templateName,
-            question: processData.question || '',
-            custom_prompt: processData.customPrompt || '',
         });
     }
 

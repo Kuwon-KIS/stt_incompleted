@@ -63,15 +63,9 @@ def process_sync(req: ProcessRequest) -> dict:
 
     # Build the prompt for LLM (using template store from main app)
     # This is a simplified version - actual implementation uses global TEMPLATE_STORE
-    if req.custom_prompt:
-        prompt = req.custom_prompt
-        logger.info("using custom_prompt length=%d", len(prompt))
-    else:
-        # Would use template from TEMPLATE_STORE in actual implementation
-        prompt = f"Analyze the following text for incomplete sales elements:\n\n{text}"
-        if req.question:
-            prompt += f"\n\nAdditional question: {req.question}"
-        logger.info("built prompt length=%d", len(prompt))
+    # Would use template from TEMPLATE_STORE in actual implementation
+    prompt = f"Analyze the following text for incomplete sales elements:\n\n{text}"
+    logger.info("built prompt length=%d", len(prompt))
 
     # 2) Call detection strategy (vLLM or Agent)
     logger.info("calling detection service type=%s", req.call_type)
@@ -190,8 +184,6 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     remote_path=full_path,
                     call_type=req.call_type,
                     template_name=req.template_name,
-                    question=req.question,
-                    custom_prompt=req.custom_prompt,
                 )
                 
                 future = executor.submit(process_sync, process_req)
