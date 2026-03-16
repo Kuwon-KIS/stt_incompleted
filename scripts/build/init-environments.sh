@@ -48,74 +48,119 @@ create_env_file() {
     case "$env" in
         dev)
             cat > "$filepath" << 'EOF'
-# Development Environment - RHEL 8.9 (AWS EC2)
+# Development environment for AWS EC2 Linux
+# Real services for integration testing
+
 APP_ENV=dev
-DEBUG=false
 LOG_LEVEL=INFO
 
-# SFTP Configuration
-SFTP_HOST=your-sftp-host
+# SFTP (Development server)
+SFTP_HOST=sftp-dev.internal
 SFTP_PORT=22
-SFTP_USERNAME=your-username
-SFTP_PASSWORD=your-password
-SFTP_SOURCE_PATH=/source/path
-SFTP_BATCH_PATH=/batch/path
+SFTP_USERNAME=app_dev
+SFTP_PASSWORD=
+SFTP_KEY=
+SFTP_ROOT_PATH=/uploads
 
-# LLM Configuration
-LLM_URL=http://localhost:8001/v1/chat/completions
-LLM_MODEL=qwen
+# LLM Settings (Development vLLM server)
+CALL_TYPE=vllm
+LLM_URL=https://vllm-dev.internal:8000/v1/chat/completions
+LLM_AUTH_HEADER=Bearer dev_token_xxx
+MODEL_PATH=qwen-7b
 
-# Processing Configuration
-MAX_WORKERS=4
-REQUEST_TIMEOUT=300
+# Agent (if using agent)
+AGENT_NAME=sales-compliance-dev
+
+# Template
+TEMPLATE_NAME=qwen_default
+
+# Callback (Development callback endpoint)
+CALLBACK_URL=https://api-dev.internal/results
+CALLBACK_AUTH_HEADER=Bearer dev_callback_token
+
+# Batch processing
+BATCH_CONCURRENCY=4
+
+# Streaming
+USE_STREAMING=false
 EOF
             ;;
         local)
             cat > "$filepath" << 'EOF'
-# Local Development Environment - macOS
+# Local development environment - macOS
+# Mock/test configuration for development
+
 APP_ENV=local
-DEBUG=true
 LOG_LEVEL=DEBUG
 
-# SFTP Configuration (mock/disabled for local)
+# SFTP (local/mock)
 SFTP_HOST=localhost
 SFTP_PORT=22
 SFTP_USERNAME=local_user
 SFTP_PASSWORD=
-SFTP_SOURCE_PATH=/tmp/source
-SFTP_BATCH_PATH=/tmp/batch
+SFTP_KEY=
+SFTP_ROOT_PATH=/tmp/uploads
 
-# LLM Configuration (mock)
-LLM_URL=http://localhost:8001/v1/chat/completions
-LLM_MODEL=qwen
+# LLM Settings (local mock)
+CALL_TYPE=vllm
+LLM_URL=http://localhost:8000/v1/chat/completions
+LLM_AUTH_HEADER=Bearer local_token
+MODEL_PATH=qwen-7b
 
-# Processing Configuration
-MAX_WORKERS=2
-REQUEST_TIMEOUT=60
+# Agent (if using agent)
+AGENT_NAME=sales-compliance-local
+
+# Template
+TEMPLATE_NAME=qwen_default
+
+# Callback (local mock endpoint)
+CALLBACK_URL=http://localhost:8080/results
+CALLBACK_AUTH_HEADER=Bearer local_callback_token
+
+# Batch processing
+BATCH_CONCURRENCY=2
+
+# Streaming
+USE_STREAMING=false
 EOF
             ;;
         prod)
             cat > "$filepath" << 'EOF'
-# Production Environment - RHEL 8.9 (On-premise)
+# Production environment - RHEL 8.9 (On-premise)
+# High-performance production settings
+
 APP_ENV=prod
-DEBUG=false
 LOG_LEVEL=WARNING
 
-# SFTP Configuration
-SFTP_HOST=your-prod-sftp-host
+# SFTP (Production server)
+SFTP_HOST=sftp-prod.internal
 SFTP_PORT=22
-SFTP_USERNAME=your-prod-username
-SFTP_PASSWORD=your-prod-password
-SFTP_SOURCE_PATH=/production/source
-SFTP_BATCH_PATH=/production/batch
+SFTP_USERNAME=app_prod
+SFTP_PASSWORD=
+SFTP_KEY=
+SFTP_ROOT_PATH=/uploads
 
-# LLM Configuration
-LLM_URL=http://your-prod-llm-host:8001/v1/chat/completions
-LLM_MODEL=qwen
+# LLM Settings (Production vLLM server)
+CALL_TYPE=vllm
+LLM_URL=https://vllm-prod.internal:8000/v1/chat/completions
+LLM_AUTH_HEADER=Bearer prod_token_xxx
+MODEL_PATH=qwen-7b
 
-# Processing Configuration
-MAX_WORKERS=8
-REQUEST_TIMEOUT=600
+# Agent (if using agent)
+AGENT_NAME=sales-compliance-prod
+
+# Template
+TEMPLATE_NAME=qwen_default
+
+# Callback (Production callback endpoint)
+CALLBACK_URL=https://api-prod.internal/results
+CALLBACK_AUTH_HEADER=Bearer prod_callback_token
+
+# Batch processing
+BATCH_CONCURRENCY=8
+
+# Streaming
+USE_STREAMING=false
 EOF
             ;;
         *)
