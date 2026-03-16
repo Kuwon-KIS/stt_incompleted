@@ -17,7 +17,6 @@ class App {
         
         // 초기 상태 로드
         await this.refreshStatus();
-        await this.loadTemplates();
         
         // 주기적 상태 업데이트
         this.statusCheckInterval = setInterval(() => this.refreshStatus(), 30000);
@@ -38,24 +37,6 @@ class App {
         document.getElementById('batch-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleBatchSubmit();
-        });
-
-        // 템플릿 관리 폼
-        document.getElementById('template-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleTemplateSave();
-        });
-
-        // 템플릿 선택 이벤트
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('template-card')) {
-                this.selectTemplate(e.target.dataset.templateName);
-            }
-        });
-
-        // 템플릿 삭제 버튼
-        document.getElementById('delete-template').addEventListener('click', () => {
-            this.handleTemplateDelete();
         });
 
         // 검색 및 필터
@@ -97,8 +78,6 @@ class App {
         // Page-specific setup
         if (pageName === 'history') {
             this.loadJobHistory();
-        } else if (pageName === 'templates') {
-            this.loadTemplates();
         }
     }
 
@@ -286,113 +265,9 @@ class App {
         URL.revokeObjectURL(url);
     }
 
-    // ===== Templates =====
-
-    async loadTemplates() {
-        try {
-            const response = await api.getTemplates();
-            const templates = response.templates || [];
-
-            // 템플릿 목록 업데이트
-            const listContainer = document.getElementById('templates-list');
-            listContainer.innerHTML = templates.map(name => `
-                <div class="template-card" data-template-name="${name}">
-                    <div class="template-name">${name}</div>
-                    <div class="template-preview">클릭하여 편집...</div>
-                </div>
-            `).join('');
-
-            // 템플릿 선택 드롭다운 업데이트
-            const selectContainer = document.getElementById('template-select');
-            selectContainer.innerHTML = templates.map(name => `
-                <option value="${name}">${name}</option>
-            `).join('');
-
-            // 배치 페이지의 템플릿 선택
-            const batchSelectContainer = document.getElementById('template-select');
-            batchSelectContainer.innerHTML = templates.map(name => `
-                <option value="${name}">${name}</option>
-            `).join('');
-        } catch (error) {
-            console.error('템플릿 로드 실패:', error);
-        }
-    }
-
-    async selectTemplate(templateName) {
-        try {
-            const response = await api.getTemplate(templateName);
-            const content = response.content;
-
-            // 폼에 채우기
-            document.getElementById('template-name').value = templateName;
-            document.getElementById('template-content').value = content;
-
-            // 선택 표시
-            document.querySelectorAll('.template-card').forEach(card => {
-                card.classList.remove('active');
-            });
-            event.target.closest('.template-card').classList.add('active');
-
-            // 삭제 버튼 표시
-            document.getElementById('delete-template').style.display = 'block';
-        } catch (error) {
-            console.error('템플릿 조회 실패:', error);
-        }
-    }
-
-    async handleTemplateSave() {
-        const name = document.getElementById('template-name').value;
-        const content = document.getElementById('template-content').value;
-
-        if (!name || !content) {
-            alert('템플릿 이름과 내용은 필수입니다.');
-            return;
-        }
-
-        try {
-            await api.saveTemplate(name, content);
-            alert('✅ 템플릿이 저장되었습니다.');
-            
-            // 템플릿 목록 새로고침
-            await this.loadTemplates();
-            
-            // 폼 초기화
-            document.getElementById('template-form').reset();
-            document.getElementById('delete-template').style.display = 'none';
-        } catch (error) {
-            alert(`템플릿 저장 실패: ${error.message}`);
-        }
-    }
-
-    async handleTemplateDelete() {
-        const name = document.getElementById('template-name').value;
-        if (!name) {
-            alert('삭제할 템플릿을 선택하세요.');
-            return;
-        }
-
-        if (!confirm(`"${name}" 템플릿을 삭제하시겠습니까?`)) {
-            return;
-        }
-
-        try {
-            await api.deleteTemplate(name);
-            alert('✅ 템플릿이 삭제되었습니다.');
-            
-            // 템플릿 목록 새로고침
-            await this.loadTemplates();
-            
-            // 폼 초기화
-            document.getElementById('template-form').reset();
-            document.getElementById('delete-template').style.display = 'none';
-        } catch (error) {
-            alert(`템플릿 삭제 실패: ${error.message}`);
-        }
-    }
-
     // ===== Job History =====
 
-    loadJobHistory() {
+    async loadJobHistory() {
         const jobs = jobHistory.getAll();
         const tbody = document.querySelector('.jobs-table tbody');
 

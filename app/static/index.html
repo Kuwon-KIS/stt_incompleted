@@ -16,7 +16,6 @@
             <ul class="navbar-menu">
                 <li><a href="#dashboard" class="nav-link active" data-page="dashboard">대시보드</a></li>
                 <li><a href="#batch" class="nav-link" data-page="batch">배치 처리</a></li>
-                <li><a href="#templates" class="nav-link" data-page="templates">템플릿</a></li>
                 <li><a href="#history" class="nav-link" data-page="history">이력</a></li>
             </ul>
         </nav>
@@ -132,40 +131,6 @@
                             </table>
                             <button class="btn btn-secondary" id="download-results">결과 다운로드</button>
                         </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Template Management Page -->
-            <section id="templates" class="page">
-                <h2>📝 템플릿 관리</h2>
-                <div class="templates-container">
-                    <!-- Template List -->
-                    <div class="card">
-                        <div class="card-title">템플릿 목록</div>
-                        <div id="templates-list" class="templates-list">
-                            <p class="empty-state">템플릿을 로드 중...</p>
-                        </div>
-                    </div>
-
-                    <!-- Template Editor -->
-                    <div class="card">
-                        <div class="card-title">템플릿 편집</div>
-                        <form id="template-form" class="template-form">
-                            <div class="form-group">
-                                <label>템플릿 이름</label>
-                                <input type="text" id="template-name" placeholder="e.g., my_template" required>
-                            </div>
-                            <div class="form-group">
-                                <label>템플릿 내용</label>
-                                <textarea id="template-content" placeholder="템플릿 내용을 입력하세요. {text}와 {question} 플레이스홀더 사용 가능" rows="8" required></textarea>
-                            </div>
-                            <div class="form-actions">
-                                <button type="submit" class="btn btn-primary">저장</button>
-                                <button type="reset" class="btn btn-secondary">초기화</button>
-                                <button type="button" class="btn btn-danger" id="delete-template" style="display: none;">삭제</button>
-                            </div>
-                        </form>
                     </div>
                 </div>
             </section>
