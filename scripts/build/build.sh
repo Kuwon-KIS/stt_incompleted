@@ -104,6 +104,12 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 log_success "Environment file found: $ENV_FILE"
 
+# Check environments directory exists (required for Docker COPY)
+if [ ! -d "environments" ]; then
+    log_error "environments/ directory not found (required for Docker build)"
+fi
+log_success "environments/ directory exists"
+
 # Check requirements.txt
 if [ ! -f "requirements.txt" ]; then
     log_error "requirements.txt not found"

@@ -12,9 +12,13 @@ The build scripts are designed for the three-environment architecture:
 All build scripts are located in `scripts/build/`:
 ```
 scripts/build/
-├── build.sh       # Main unified build script
-├── build-dev.sh   # Alias for: build.sh dev
-└── build-prod.sh  # Alias for: build.sh prod
+├── build.sh                 # Main unified build script
+├── build-dev.sh             # Alias for: build.sh dev [version]
+├── build-prod.sh            # Alias for: build.sh prod [version]
+├── init-environments.sh     # Initialize .env files
+├── dev-server.sh            # Local development server
+├── validate-setup.sh        # Validate build environment
+└── test-version-param.sh    # Test version parameter handling
 ```
 
 ## Usage
@@ -100,6 +104,33 @@ Build image and export as compressed tar.gz:
   - Deployment instructions
 
 ## Deployment Workflow
+
+### Initial Setup (First Time Only)
+
+On fresh EC2 deployment, initialize environment files:
+
+```bash
+# Initialize all environments (dev, local, prod)
+./scripts/build/init-environments.sh
+
+# Or initialize specific environments
+./scripts/build/init-environments.sh dev,prod
+
+# Edit with real values
+nano environments/.env.dev
+nano environments/.env.prod
+```
+
+**Generated template structure:**
+```
+environments/
+├── .env.dev    # Development settings
+├── .env.local  # Local development
+├── .env.prod   # Production settings
+└── .gitkeep    # Ensures directory is tracked in git
+```
+
+⚠️ **Important**: All `.env.* files are git-ignored. Never commit credentials.
 
 ### From Development (Build) Server
 

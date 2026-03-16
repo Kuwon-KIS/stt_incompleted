@@ -30,8 +30,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY ./app ./app
 
-# Copy environment configuration and templates (all available at runtime)
+# Copy environment configuration directory (must exist with .gitkeep for git tracking)
+# All .env files inside are git-ignored for security
 COPY environments/ ./environments/
+
+# Copy templates if they exist (optional)
 COPY app/templates/ ./app/templates/
 
 # Runtime environment loading:
