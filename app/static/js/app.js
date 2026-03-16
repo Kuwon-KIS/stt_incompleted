@@ -40,6 +40,20 @@ class App {
             this.handleBatchSubmit();
         });
 
+        // 탐지 방식 변경 이벤트 (템플릿 활성화/비활성화)
+        document.getElementById('call-type').addEventListener('change', (e) => {
+            const templateSelect = document.getElementById('template-select');
+            if (e.target.value === 'agent') {
+                // AI Agent 선택: 템플릿 비활성화
+                templateSelect.disabled = true;
+                templateSelect.required = false;
+            } else {
+                // vLLM 선택: 템플릿 활성화
+                templateSelect.disabled = false;
+                templateSelect.required = true;
+            }
+        });
+
         // 템플릿 관리 폼
         document.getElementById('template-form').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -186,7 +200,7 @@ class App {
                 endDate,
                 callType,
                 concurrency,
-                templateName,
+                templateName: callType === 'agent' ? null : templateName,  // AI Agent일 때는 템플릿 미전송
                 question,
             });
 
