@@ -427,7 +427,188 @@ export SERVICE_PORT=8080
 ./test_remote.sh
 ```
 
+## 처리 흐름 아키텍처
+
+### 전체 흐름도
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         입력 텍스트 획득                         │
+├─────────────────────────────────────────────────────────────────┤
+│  1. SFTP 경로에서 파일 읽기 (/process + remote_path)           │
+│     또는                                                        │
+│  2. 웹 UI에서 inline text 직접 입력 (/process + inline_text)  │
+└────────────┬────────────────────────────────────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Text 점검/분석                              │
+├─────────────────────────────────────────────────────────────────┤
+│  경로 A: vLLM 방식                                              │
+│  - Prompt Template에 맞게 텍스트 포맷 변환                     │
+│  - vLLM 서버로 HTTP POST (LLM_URL)                             │
+│  - Authorization 헤더 포함 (LLM_AUTH_HEADER)                   │
+│                                                                │
+│  경로 B: AI Agent 방식                                         │
+│  - 사용자 텍스트를 그대로 Agent API에 전달                     │
+│  - Agent 서버로 HTTP POST (LLM_URL/{AGENT_NAME})               │
+│  - user_query와 context로 파라미터 구성                        │
+└────────────┬────────────────────────────────────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      결과 전송 (선택사항)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  - 콜백 URL이 제공된 경우 결과를 콜백 엔드포인트로 POST        │
+│  - Authorization 헤더 포함 (CALLBACK_AUTH_HEADER)              │
+│  - 최대 2회 재시도 (실패 시)                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 입력 방식
+
+#### 1. SFTP 파일 읽기
+
+```
+요청: POST /process
+{
+  "host": "sftp.example.com",
+  "username": "user",
+  "password": "pass",
+  "remote_path": "/uploads/file.txt",
+  "call_type": "vllm"
+}
+
+처리:
+1. SFTP 연결 (host:port, username/password)
+2. remote_path에서 파일 읽기 (UTF-8)
+3. 텍스트 내용 추출
+4. Detection 로직으로 진행
+```
+
+#### 2. Inline Text (웹 UI / 직접 입력)
+
+```
+요청: POST /process
+{
+  "inline_text": "사용자가 직접 붙여넣은 텍스트 내용",
+  "call_type": "vllm",
+  "template_name": "qwen_default"
+}
+
+처리:
+1. inline_text 필드에서 직접 텍스트 추출
+2. SFTP 연결 없음 (로컬 테스트에 용이)
+3. 텍스트 내용으로 Detection 로직 진행
+```
+
+### Detection (분석) 로직
+
+#### 경로 A: vLLM 사용
+
+```
+입력 텍스트
+    ▼
+[Prompt Template 포맷 변환]
+- template_name에 해당하는 템플릿 로드
+- 텍스트를 템플릿 변수로 치환
+- 포맷된 프롬프트 생성
+    ▼
+[vLLM 호출]
+POST {LLM_URL}/v1/chat/completions
+Headers:
+  Authorization: {LLM_AUTH_HEADER}
+  Content-Type: application/json
+Body:
+{
+  "model": "{MODEL_PATH}",
+  "messages": [{"role": "user", "content": "{formatted_prompt}"}]
+}
+    ▼
+[응답 처리]
+- vLLM 응답에서 detection 결과 추출
+- 불완전판매요소 감지 결과 저장
+- 재시도: 최대 3회 (exponential backoff)
+    ▼
+결과 반환
+```
+
+#### 경로 B: AI Agent 사용
+
+```
+입력 텍스트
+    ▼
+[텍스트 그대로 전달]
+- 추가 포맷 변환 없음
+- 사용자 질문 + 텍스트 컨텍스트
+    ▼
+[Agent API 호출]
+POST {LLM_URL}/{AGENT_NAME}/messages
+Headers:
+  Authorization: {LLM_AUTH_HEADER}
+  Content-Type: application/json
+Body:
+{
+  "parameters": {
+    "user_query": "{question/prompt}",
+    "context": "{input_text}"
+  },
+  "use_streaming": {USE_STREAMING}
+}
+    ▼
+[응답 처리]
+- Agent 응답에서 detection 결과 추출
+- 불완전판매요소 감지 결과 저장
+- 재시도: 최대 3회
+    ▼
+결과 반환
+```
+
+### 선택 기준 (vLLM vs Agent)
+
+| 항목 | vLLM | Agent |
+|------|------|-------|
+| **프롬프트 처리** | Template 기반 포맷 변환 | 사용자 입력 그대로 사용 |
+| **구성** | API 엔드포인트 직접 호출 | 별도 Agent 시스템 |
+| **유연성** | 낮음 (Template 정의 필요) | 높음 (직접 질문 가능) |
+| **성능** | 빠름 | 가변적 |
+| **사용 시기** | 구조화된 프롬프트 필요 | 자유도 높은 분석 필요 |
+| **설정** | CALL_TYPE=vllm, MODEL_PATH | CALL_TYPE=agent, AGENT_NAME |
+
+### 배치 처리 (여러 파일)
+
+```
+요청: POST /process/batch/submit
+{
+  "host": "sftp.internal",
+  "username": "user",
+  "password": "pass",
+  "root_path": "/uploads",
+  "start_date": "20260301",  ← YYYYMMDD 형식
+  "end_date": "20260305",     ← YYYYMMDD 형식
+  "call_type": "vllm",
+  "batch_concurrency": 4      ← 동시 처리 개수
+}
+
+처리:
+1. SFTP 연결
+2. /uploads/20260301/, /uploads/20260302/ 등 폴더 탐색
+3. 각 폴더의 .txt 파일 발견
+4. ThreadPoolExecutor로 최대 4개 파일 동시 처리
+5. 각 파일마다 위의 vLLM/Agent 로직 실행
+6. 결과를 job_id로 저장 (비동기)
+7. 즉시 job_id 반환
+
+상태 조회: GET /process/batch/status/{job_id}
+응답: {
+  "status": "running|completed|failed",
+  "progress": {"processed": 5, "total": 10},
+  "results": [...]
+}
+```
+
 ## API 엔드포인트 및 예시
+
 
 ### 1. 헬스 체크
 

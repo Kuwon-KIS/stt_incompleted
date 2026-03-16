@@ -506,3 +506,81 @@ Contingency: +1-2 days for unexpected issues
 **Ready to Begin Phase 4.1**: YES  
 **Estimated Duration**: 5-7 days  
 **Dependencies**: Phase 3 completion (✅), AWS account setup
+
+---
+
+## 🔍 Architecture Verification (추가 - 2026년 3월)
+
+### 처리 흐름 검증 결과
+
+**1. 입력 텍스트 획득 ✅**
+- ✅ SFTP 파일 읽기: `ProcessRequest.remote_path` + `SFTPClient.read_file()`
+- ✅ 웹 UI 직접 입력: `ProcessRequest.inline_text` + `routes/web.py`
+
+**2. Text 점검 (Detection) ✅**
+
+**경로 A: vLLM 사용**
+- ✅ Prompt Template 포맷: `templates/` 디렉토리의 `.tmpl` 파일
+- ✅ 템플릿 변수 치환: `detection/vllm_detector.py`에서 처리
+- ✅ vLLM API 호출: HTTP POST to `LLM_URL/v1/chat/completions`
+- ✅ 인증 헤더: `LLM_AUTH_HEADER` 포함
+
+**경로 B: AI Agent 사용**
+- ✅ 사용자 텍스트 그대로 전달: `detection/agent_detector.py`
+- ✅ Agent 파라미터: `user_query` + `context` 포맷
+- ✅ Agent API 호출: HTTP POST to `LLM_URL/{AGENT_NAME}/messages`
+- ✅ 인증 헤더: `LLM_AUTH_HEADER` 포함
+
+**3. 결과 전송 (Callback) ✅**
+- ✅ 콜백 URL 조건부 전송: `ProcessRequest.callback_url`
+- ✅ 결과 페이로드: `{"llm_output": ..., "detected_issues": ...}`
+- ✅ 인증 헤더: `CALLBACK_AUTH_HEADER` 포함
+- ✅ 재시도 로직: 최대 2회
+
+**4. 배치 처리 ✅**
+- ✅ 날짜 범위 파일 발견: SFTP 탐색 (YYYYMMDD 폴더 구조)
+- ✅ 병렬 처리: `ThreadPoolExecutor` + `BATCH_CONCURRENCY`
+- ✅ 비동기 작업: `run_batch_async()` + Job Store
+- ✅ 상태 추적: `/process/batch/status/{job_id}`
+
+**5. 환경별 구성 ✅**
+- ✅ local (.env.local): Mock 서버 기반 테스트
+- ✅ dev (.env.dev): 실제 dev 서버 연결
+- ✅ prod (.env.prod): 실제 prod 서버 연결
+
+### 웹 UI 통합 ✅
+
+- ✅ Dashboard: 시스템 상태 + 최근 작업 + 통계
+- ✅ Batch Processing: 날짜 범위 + 설정 선택
+- ✅ Templates: 템플릿 조회/생성/편집/삭제
+- ✅ Job History: 작업 이력 + 상태 추적
+
+### 문서화 현황
+
+- ✅ README.md: 처리 흐름 아키텍처 다이어그램 추가
+- ✅ LOCAL_DEVELOPMENT.md: 로컬 개발 가이드
+- ✅ BUILD_SCRIPT_GUIDE.md: 빌드 스크립트 + 환경 초기화 가이드
+- ✅ PHASE4_PLAN.md: 이 파일 (실행 계획)
+
+### 다음 단계 (Phase 5)
+
+1. **AWS EC2 배포 테스트** (RHEL 8.9)
+   - `./scripts/build/init-environments.sh dev`로 환경 파일 초기화
+   - `./scripts/build/build-dev.sh v0.0.1`로 Docker 이미지 빌드
+   - Docker tar.gz 생성 + 전송 + 로드
+   - 실제 SFTP/vLLM 서버와 통합 테스트
+
+2. **불완전판매요소 탐지 모듈 완성**
+   - Detection 로직 세부 구현
+   - 실제 LLM 모델과 성능 최적화
+   - 템플릿 확대 (Qwen, GPT, 기타 모델)
+
+3. **프로덕션 배포**
+   - Kubernetes/Docker Compose 배포 시나리오
+   - 모니터링 + 로깅 + 알림 설정
+   - 성능 튜닝 및 최적화
+
+---
+
+**아키텍처 검증 완료**: ✅ 2026-03-16  
+**다음 마일스톤**: Phase 5 (불완전판매요소 탐지 모듈 완성)
