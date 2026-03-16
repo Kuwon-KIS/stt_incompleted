@@ -128,7 +128,7 @@ The build scripts now support optional flags for Docker operations:
 ```
 ✓ Container running: stt-post-review-test
 Port: 8002
-Ports: 0.0.0.0:8002->8000/tcp
+Ports: 0.0.0.0:8002->8002/tcp
 
 Access Points:
 - API: http://localhost:8002
@@ -197,7 +197,7 @@ scp output/stt-post-review-prod-1.0.0.tar.gz user@server:/tmp/
 
 # 4. On remote server, load and run
 # docker load < /tmp/stt-post-review-prod-1.0.0.tar.gz
-# docker run -d -p 8000:8000 stt-post-review:1.0.0
+# docker run -d -p 8002:8002 stt-post-review:1.0.0
 ```
 
 ### Workflow 3: Build, Verify, Deploy
@@ -219,7 +219,7 @@ scp output/stt-post-review-prod-1.0.0.tar.gz prod-server:/opt/images/
 
 # 5. On production, load and run
 # docker load < /opt/images/stt-post-review-prod-1.0.0.tar.gz
-# docker run -d -p 8000:8000 --env-file .env.prod stt-post-review:1.0.0
+# docker run -d -p 8002:8002 --env-file .env.prod stt-post-review:1.0.0
 ```
 
 ### Workflow 4: CI/CD Pipeline Integration
