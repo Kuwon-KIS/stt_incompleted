@@ -153,16 +153,20 @@ class App {
     // ===== Batch Processing =====
 
     async handleBatchSubmit() {
-        const startDate = document.getElementById('start-date').value;
-        const endDate = document.getElementById('end-date').value;
+        const startDateInput = document.getElementById('start-date').value;
+        const endDateInput = document.getElementById('end-date').value;
         const callType = document.getElementById('call-type').value;
         const concurrency = parseInt(document.getElementById('concurrency').value);
         const templateName = document.getElementById('template-select').value;
         const question = document.getElementById('question').value;
 
-        // 날짜 검증
-        if (!this.validateDate(startDate) || !this.validateDate(endDate)) {
-            alert('날짜 형식이 올바르지 않습니다. (YYYYMMDD)');
+        // HTML date input을 YYYYMMDD 형식으로 변환 (예: 2026-03-16 → 20260316)
+        const startDate = startDateInput.replace(/-/g, '');
+        const endDate = endDateInput.replace(/-/g, '');
+
+        // 날짜 검증 (이미 HTML5 date input에 의해 검증됨)
+        if (!startDateInput || !endDateInput) {
+            alert('시작 날짜와 종료 날짜를 입력하세요.');
             return;
         }
 
@@ -447,7 +451,9 @@ class App {
     // ===== Utilities =====
 
     validateDate(dateStr) {
-        return /^\d{8}$/.test(dateStr) && !isNaN(parseInt(dateStr));
+        // HTML5 date input은 YYYY-MM-DD 형식을 사용하므로 이전 YYYYMMDD 형식 검증은 사용되지 않음
+        // 하지만 호환성을 위해 YYYYMMDD 형식도 검증 가능
+        return /^\d{8}$/.test(dateStr) && !isNaN(parseInt(dateStr)) || /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
     }
 
     formatUptime(seconds) {
