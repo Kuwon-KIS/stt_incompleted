@@ -61,7 +61,12 @@ class Config:
     LLM_URL = os.getenv("LLM_URL")
     LLM_AUTH_HEADER = os.getenv("LLM_AUTH_HEADER")
     MODEL_PATH = os.getenv("MODEL_PATH")
+    
+    # Agent settings (separate from LLM)
+    AGENT_URL = os.getenv("AGENT_URL")
     AGENT_NAME = os.getenv("AGENT_NAME")
+    AGENT_AUTH_HEADER = os.getenv("AGENT_AUTH_HEADER")
+    
     USE_STREAMING = os.getenv("USE_STREAMING", "false").lower() == "true"
     
     # Callback settings

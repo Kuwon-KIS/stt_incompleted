@@ -6,7 +6,8 @@ Uses direct user input without prompt templates.
 import logging
 import requests
 import time
-from typing import Dict, Any
+import json
+from typing import Dict, Any, List
 from .base import DetectionStrategy
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ class AgentDetector(DetectionStrategy):
     - Uses agent_name to identify the specific agent
     - Direct user input without template formatting
     - Supports streaming responses
-    - Requires AGENT_NAME and LLM_URL configuration
+    - Requires AGENT_NAME, AGENT_URL, and AGENT_AUTH_HEADER configuration
     """
     
     def __init__(self, config):
@@ -31,17 +32,60 @@ class AgentDetector(DetectionStrategy):
         """
         self.config = config
         self.agent_name = config.AGENT_NAME
-        self.llm_url = config.LLM_URL
-        self.auth_header = config.LLM_AUTH_HEADER
+        self.agent_url = config.AGENT_URL
+        self.auth_header = config.AGENT_AUTH_HEADER
         self.use_streaming = config.USE_STREAMING
     
     def validate_config(self) -> bool:
         """Validate required Agent configuration."""
         if not self.agent_name:
             raise ValueError("AGENT_NAME is required for Agent detector")
-        if not self.llm_url:
-            raise ValueError("LLM_URL is required for Agent detector")
+        if not self.agent_url:
+            raise ValueError("AGENT_URL is required for Agent detector")
         return True
+    
+    async def extract_issues(self, response: str) -> List[Dict[str, Any]]:
+        """
+        Extract detected issues from Agent response in structured format.
+        
+        Agent returns JSON with: category, summary, omission_num, omission_steps, omission_reasons, reason
+        
+        Args:
+            response: JSON string from Agent API
+            
+        Returns:
+            List of issue dictionaries with structured format
+        """
+        try:
+            # Parse Agent response as JSON
+            agent_result = json.loads(response)
+            
+            # Extract omission information
+            omission_steps = agent_result.get("omission_steps", [])
+            omission_reasons = agent_result.get("omission_reasons", [])
+            omission_num = agent_result.get("omission_num", "0")
+            
+            # Create issue list pairing steps with reasons
+            issues = []
+            for i, (step, reason) in enumerate(zip(omission_steps, omission_reasons)):
+                issues.append({
+                    "index": i,
+                    "step": step,
+                    "reason": reason,
+                    "category": agent_result.get("category", "unknown"),
+                    "severity": "high" if i < int(omission_num) else "medium"
+                })
+            
+            logger.debug("Extracted %d issues from Agent response", len(issues))
+            return issues
+            
+        except json.JSONDecodeError as e:
+            logger.warning("Failed to parse Agent response as JSON: %s. Returning raw text.", e)
+            # Fallback: return response as single issue if parsing fails
+            return [{"error": "parse_error", "raw_response": response}]
+        except Exception as e:
+            logger.exception("Error extracting issues from Agent response: %s", e)
+            return [{"error": "extraction_error", "details": str(e)}]
     
     async def detect(self, text: str, prompt: str) -> Dict[str, Any]:
         """
@@ -63,8 +107,8 @@ class AgentDetector(DetectionStrategy):
         
         try:
             # Call Agent API
-            # Note: Adjust endpoint based on actual Agent API format
-            agent_endpoint = f"{self.llm_url}/{self.agent_name}/messages"
+            # Agent endpoint format: {AGENT_URL}/{agent_name}/messages
+            agent_endpoint = f"{self.agent_url}/{self.agent_name}/messages"
             
             payload = {
                 "parameters": {

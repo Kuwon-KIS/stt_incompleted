@@ -103,21 +103,26 @@ async def mock_agent_endpoint(agent_name: str, payload: Dict[str, Any]):
         context = params.get("context", "")
         
         # Mock detection logic - simulates agent analysis
-        # In real scenario, this would call actual AI agent API
-        # AgentDetector expects "result" field with completion text
-        mock_completion = """분석 결과:
-1. 불완전한 판매 요소 감지:
-   - 상품 설명 불충분: 주요 특징과 이점을 더 명확하게 설명해야 함
-   - 고객 요구사항 확인 부족: 고객의 실제 필요를 더 깊이 있게 파악해야 함
-   
-2. 개선 필요 부분:
-   - 가격 협상 시 논거 약함
-   - 구매 의사 확인이 명확하지 않음
-   
-3. 종합 평가: 전반적으로 양호하나 마무리 부분 개선 권장"""
+        # AgentDetector expects "result" field with JSON string format per specification
+        # Actual Agent returns: { category, summary, omission_num, omission_steps, omission_reasons, reason }
+        mock_agent_result = {
+            "category": "사후판매",
+            "summary": "고객님에게 IMA 투자상품을 판매하는 내용입니다. 투자 성향에 맞는 상품을 제안했습니다.",
+            "omission_num": "2",
+            "omission_steps": [
+                "투자자정보 확인",
+                "설명서 필수 사항 설명"
+            ],
+            "omission_reasons": [
+                "투자자정보를 파악하는 구간이 없습니다.",
+                "금융투자상품의 내용 및 구조를 설명하는 구간이 없습니다."
+            ],
+            "reason": "투자상품 판매에서 필수 설명의무가 일부 누락되었습니다. 투자자 정보 확인 및 상품 설명서 주요 내용 설명이 필요합니다."
+        }
         
+        import json
         mock_result = {
-            "result": mock_completion,
+            "result": json.dumps(mock_agent_result, ensure_ascii=False),
             "status": "success",
             "processing_time_ms": 150
         }
