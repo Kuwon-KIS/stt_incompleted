@@ -48,7 +48,12 @@ class AgentDetector(DetectionStrategy):
         """
         Extract detected issues from Agent response in structured format.
         
-        Agent returns JSON with: category, summary, omission_num, omission_steps, omission_reasons, reason
+        Agent response can have two formats:
+        1. Simple format (direct output):
+           { category, summary, omission_num, omission_steps, omission_reasons, reason }
+        
+        2. Nested format (actual Agent API):
+           { message_id, chat_thread_id, answer: { answer: { category, summary, ... } } }
         
         Args:
             response: JSON string from Agent API
@@ -58,12 +63,26 @@ class AgentDetector(DetectionStrategy):
         """
         try:
             # Parse Agent response as JSON
-            agent_result = json.loads(response)
+            agent_response = json.loads(response)
+            
+            # Try to extract the actual data from nested structure first
+            agent_result = agent_response
+            
+            # Check if response has nested answer structure
+            if "answer" in agent_response and isinstance(agent_response["answer"], dict):
+                if "answer" in agent_response["answer"]:
+                    agent_result = agent_response["answer"]["answer"]
+                    logger.debug("Extracted nested Agent response format")
             
             # Extract omission information
             omission_steps = agent_result.get("omission_steps", [])
             omission_reasons = agent_result.get("omission_reasons", [])
-            omission_num = agent_result.get("omission_num", "0")
+            omission_num = int(agent_result.get("omission_num", "0"))
+            
+            # Validate that steps and reasons are paired
+            if len(omission_steps) != len(omission_reasons):
+                logger.warning("Mismatch between omission_steps (%d) and omission_reasons (%d)",
+                              len(omission_steps), len(omission_reasons))
             
             # Create issue list pairing steps with reasons
             issues = []
@@ -73,16 +92,21 @@ class AgentDetector(DetectionStrategy):
                     "step": step,
                     "reason": reason,
                     "category": agent_result.get("category", "unknown"),
-                    "severity": "high" if i < int(omission_num) else "medium"
+                    "summary": agent_result.get("summary", ""),
+                    "severity": "high" if i < omission_num else "medium"
                 })
+            
+            # Add root reason to each issue if exists
+            if "reason" in agent_result and agent_result["reason"]:
+                for issue in issues:
+                    issue["root_reason"] = agent_result["reason"]
             
             logger.debug("Extracted %d issues from Agent response", len(issues))
             return issues
             
         except json.JSONDecodeError as e:
-            logger.warning("Failed to parse Agent response as JSON: %s. Returning raw text.", e)
-            # Fallback: return response as single issue if parsing fails
-            return [{"error": "parse_error", "raw_response": response}]
+            logger.warning("Failed to parse Agent response as JSON: %s. Returning error.", e)
+            return [{"error": "parse_error", "details": str(e), "raw_response": response[:200]}]
         except Exception as e:
             logger.exception("Error extracting issues from Agent response: %s", e)
             return [{"error": "extraction_error", "details": str(e)}]

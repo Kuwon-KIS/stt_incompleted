@@ -103,31 +103,41 @@ async def mock_agent_endpoint(agent_name: str, payload: Dict[str, Any]):
         context = params.get("context", "")
         
         # Mock detection logic - simulates agent analysis
-        # AgentDetector expects "result" field with JSON string format per specification
-        # Actual Agent returns: { category, summary, omission_num, omission_steps, omission_reasons, reason }
-        mock_agent_result = {
+        # Agent response format (nested): { message_id, chat_thread_id, answer: { answer: { ... } } }
+        # This matches actual Agent API response structure from memo
+        mock_agent_data = {
             "category": "사후판매",
-            "summary": "고객님에게 IMA 투자상품을 판매하는 내용입니다. 투자 성향에 맞는 상품을 제안했습니다.",
+            "summary": "김철수 고객님에게 IMA 투자신탁 상품을 판매하는 내용입니다. 투자 성향과 위험도를 확인하고 상품 설명을 진행했습니다.",
             "omission_num": "2",
             "omission_steps": [
                 "투자자정보 확인",
                 "설명서 필수 사항 설명"
             ],
             "omission_reasons": [
-                "투자자정보를 파악하는 구간이 없습니다.",
-                "금융투자상품의 내용 및 구조를 설명하는 구간이 없습니다."
+                "투자자정보를 파악하는 구간이 명확하지 않습니다.",
+                "금융투자상품의 내용 및 구조를 상세하게 설명하는 구간이 없습니다."
             ],
-            "reason": "투자상품 판매에서 필수 설명의무가 일부 누락되었습니다. 투자자 정보 확인 및 상품 설명서 주요 내용 설명이 필요합니다."
+            "reason": "설명의무 이행에 필요한 기본 절차가 누락되었습니다."
+        }
+        
+        # Wrap in nested answer structure to match real Agent API
+        mock_agent_response = {
+            "message_id": "msg_" + str(uuid.uuid4())[:8],
+            "chat_thread_id": "thread_" + str(uuid.uuid4())[:8],
+            "answer": {
+                "answer": mock_agent_data
+            }
         }
         
         import json
         mock_result = {
-            "result": json.dumps(mock_agent_result, ensure_ascii=False),
+            "result": json.dumps(mock_agent_response, ensure_ascii=False),
             "status": "success",
             "processing_time_ms": 150
         }
         
-        logger.info("Mock agent response: agent=%s", agent_name)
+        logger.info("Mock agent response: agent=%s, omissions=%s", 
+                   agent_name, mock_agent_data.get("omission_num", "0"))
         
         return mock_result
     except Exception as e:
