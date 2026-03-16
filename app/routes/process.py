@@ -174,8 +174,8 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
         finally:
             client.close()
         
-        # Process files in parallel
-        max_workers = max(1, req.concurrency)
+        # Process files in parallel using configured batch concurrency
+        max_workers = config.BATCH_CONCURRENCY
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}

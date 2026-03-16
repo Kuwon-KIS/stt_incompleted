@@ -170,7 +170,6 @@ class App {
         const startDateInput = document.getElementById('start-date').value;
         const endDateInput = document.getElementById('end-date').value;
         const callType = document.getElementById('call-type').value;
-        const concurrency = parseInt(document.getElementById('concurrency').value);
         const templateName = document.getElementById('template-select').value;
         const question = document.getElementById('question').value;
 
@@ -199,7 +198,6 @@ class App {
                 startDate,
                 endDate,
                 callType,
-                concurrency,
                 templateName: callType === 'agent' ? null : templateName,  // AI Agent일 때는 템플릿 미전송
                 question,
             });

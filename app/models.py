@@ -137,9 +137,6 @@ class BatchProcessRequest(BaseModel):
     question: str | None = None
     custom_prompt: str | None = None
     
-    # Batch settings
-    concurrency: int | None = None
-    
     def resolve_config(self, config):
         """Resolve all None values from config defaults."""
         # SFTP settings
@@ -179,10 +176,6 @@ class BatchProcessRequest(BaseModel):
         # Template settings
         if self.template_name is None:
             self.template_name = config.TEMPLATE_NAME
-        
-        # Processing settings
-        if self.concurrency is None:
-            self.concurrency = config.BATCH_CONCURRENCY
         
         return self
 
