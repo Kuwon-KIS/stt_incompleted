@@ -50,7 +50,7 @@ class AgentDetector(DetectionStrategy):
         
         Agent response can have two formats:
         1. Simple format (direct output):
-           { category, summary, omission_num, omission_steps, omission_reasons, reason }
+           { category, summary, omission_num, omission_steps, omission_reasons }
         
         2. Nested format (actual Agent API):
            { message_id, chat_thread_id, answer: { answer: { category, summary, ... } } }
@@ -91,15 +91,8 @@ class AgentDetector(DetectionStrategy):
                     "index": i,
                     "step": step,
                     "reason": reason,
-                    "category": agent_result.get("category", "unknown"),
-                    "summary": agent_result.get("summary", ""),
-                    "severity": "high" if i < omission_num else "medium"
+                    "category": agent_result.get("category", "unknown")
                 })
-            
-            # Add root reason to each issue if exists
-            if "reason" in agent_result and agent_result["reason"]:
-                for issue in issues:
-                    issue["root_reason"] = agent_result["reason"]
             
             logger.debug("Extracted %d issues from Agent response", len(issues))
             return issues
@@ -168,6 +161,17 @@ class AgentDetector(DetectionStrategy):
             # Extract detected issues
             detected_issues = await self.extract_issues(completion)
             
+            # Parse Agent response to extract metadata
+            try:
+                agent_response = json.loads(completion)
+                # Navigate nested structure if exists
+                agent_data = agent_response
+                if "answer" in agent_response and isinstance(agent_response["answer"], dict):
+                    if "answer" in agent_response["answer"]:
+                        agent_data = agent_response["answer"]["answer"]
+            except (json.JSONDecodeError, TypeError):
+                agent_data = {}
+            
             processing_time = (time.time() - start_time) * 1000
             
             logger.info("Agent detection completed: agent=%s, issues=%d, time=%.2fms",
@@ -175,6 +179,9 @@ class AgentDetector(DetectionStrategy):
             
             return {
                 "detected_issues": detected_issues,
+                "category": agent_data.get("category"),
+                "summary": agent_data.get("summary"),
+                "omission_num": agent_data.get("omission_num"),
                 "confidence": 0.80,  # Agent doesn't provide confidence, use default
                 "raw_response": completion,
                 "tokens_used": 0,  # Agent API may not provide token count

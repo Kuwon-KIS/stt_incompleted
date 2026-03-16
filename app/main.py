@@ -116,8 +116,7 @@ async def mock_agent_endpoint(agent_name: str, payload: Dict[str, Any]):
             "omission_reasons": [
                 "투자자정보를 파악하는 구간이 명확하지 않습니다.",
                 "금융투자상품의 내용 및 구조를 상세하게 설명하는 구간이 없습니다."
-            ],
-            "reason": "설명의무 이행에 필요한 기본 절차가 누락되었습니다."
+            ]
         }
         
         # Wrap in nested answer structure to match real Agent API
