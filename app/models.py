@@ -134,30 +134,6 @@ class BatchProcessRequest(BaseModel):
         if self.credential_name is None:
             self.credential_name = config.SFTP_CREDENTIAL_NAME
         
-        # LLM settings
-        if self.call_type is None:
-            self.call_type = config.CALL_TYPE
-        if self.llm_url is None:
-            self.llm_url = config.LLM_URL
-        if self.llm_auth_header is None:
-            self.llm_auth_header = config.LLM_AUTH_HEADER
-        if self.model_path is None:
-            self.model_path = config.MODEL_PATH
-        if self.agent_name is None:
-            self.agent_name = config.AGENT_NAME
-        if self.use_streaming is None:
-            self.use_streaming = config.USE_STREAMING
-        
-        # Callback settings
-        if self.callback_url is None:
-            self.callback_url = config.CALLBACK_URL
-        if self.callback_auth_header is None:
-            self.callback_auth_header = config.CALLBACK_AUTH_HEADER
-        
-        # Template settings
-        if self.template_name is None:
-            self.template_name = config.TEMPLATE_NAME
-        
         return self
 
 
