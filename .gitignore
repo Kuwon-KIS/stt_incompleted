@@ -30,6 +30,12 @@ _scratch/
 temp/
 *.tmp
 
+# Logs and Database
+*.log
+*.db
+logs/
+app/data/
+
 # Build outputs
 output/
 *.tar
