@@ -1,5 +1,5 @@
 /**
- * STT 탐지 시스템 - 메인 애플리케이션
+ * STT 사후 점검 시스템 - 메인 애플리케이션
  */
 
 class App {
@@ -10,7 +10,7 @@ class App {
     }
 
     async init() {
-        console.log('🚀 STT 탐지 시스템 시작...');
+        console.log('🚀 STT 사후 점검 시스템 시작...');
         
         try {
             // 이벤트 리스너 등록
@@ -547,7 +547,7 @@ class App {
         }
 
         const result = window.currentDetailResult;
-        const content = `불완전판매요소 탐지 결과 보고서
+        const content = `STT 사후 점검 결과 보고서
 ================================
 
 파일명: ${result.filename || '미지정'}
@@ -559,12 +559,12 @@ class App {
 요약: ${result.summary || '-'}
 누락건수: ${result.omission_num || '0'}
 
-[누락된 설명의무]
+[점검 항목]
 ${result.detected_issues && result.detected_issues.length > 0 ? result.detected_issues.map((issue, idx) => `
 ${idx + 1}. ${issue.step || '항목'}
    근거: ${issue.reason || ''}
    분류: ${issue.category || ''}
-`).join('') : '누락된 항목이 없습니다'}
+`).join('') : '적절한 점검 결과입니다'}
 
 [원본 텍스트]
 ${result.text || '텍스트 없음'}
