@@ -2,12 +2,13 @@
 
 from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 
 from app.database import DatabaseManager
 from app.config import config
 from app.sftp_client import create_sftp_client
+from app.utils.batch_analyzer import analyze_batch_case
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -51,6 +52,30 @@ class DateRangeResponse(BaseModel):
     available_dates: List[str]  # Sorted list of available dates
     source: str  # "local" | "sftp"
     test_mode: bool  # Whether TEST_MODE is active
+
+
+class BatchAnalysisOption(BaseModel):
+    """Batch processing option."""
+    option_id: str  # e.g., "reprocess", "view_history", "process_new"
+    label: str
+    description: str
+    action_config: Dict[str, Any]
+
+
+class BatchAnalysisRequest(BaseModel):
+    """Batch analysis request."""
+    start_date: str  # YYYYMMDD format
+    end_date: str    # YYYYMMDD format
+
+
+class BatchAnalysisResponse(BaseModel):
+    """Batch analysis response."""
+    case: str  # "full_overlap" | "partial_overlap" | "no_overlap" | "no_data"
+    user_range: Dict[str, str]  # {start_date, end_date}
+    completed_range: Optional[Dict[str, str]]  # {start_date, end_date} or null
+    overlap_dates: List[str]  # Dates that are already completed
+    new_dates: List[str]      # Dates that are not yet processed
+    options: List[BatchAnalysisOption]  # Processing options for this case
 
 
 class MessageResponse(BaseModel):
@@ -230,4 +255,125 @@ async def get_date_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
+        )
+
+@router.post("/batch-analysis", response_model=BatchAnalysisResponse)
+async def analyze_batch(req: BatchAnalysisRequest):
+    """Analyze batch processing case for user-selected date range.
+    
+    Compares user-selected date range against:
+    1. Available dates (from SFTP or Mock)
+    2. Completed dates (from database)
+    
+    Classifies into 4 cases and generates appropriate processing options:
+    - full_overlap: All dates already processed → "재처리" or "이전 기록 보기"
+    - partial_overlap: Some dates processed → "새로운 부분만 처리" or "전체 재처리"
+    - no_overlap: No dates processed → Auto-process (no options)
+    - no_data: No dates available in range → Error
+    
+    Args:
+        start_date: User selected start date (YYYYMMDD)
+        end_date: User selected end date (YYYYMMDD)
+        
+    Returns:
+        BatchAnalysisResponse with case, options, and metadata
+        
+    Raises:
+        HTTPException: If analysis fails
+    """
+    try:
+        logger.info(f"Analyzing batch: [{req.start_date}, {req.end_date}]")
+        
+        # Step 1: Get available dates from SFTP/Mock
+        available_dates = []
+        try:
+            if config.APP_ENV == "local":
+                from app.sftp_client import MockSFTPClient
+                client = MockSFTPClient(
+                    host=config.SFTP_HOST or "mock",
+                    username=config.SFTP_USERNAME,
+                    password=config.SFTP_PASSWORD
+                )
+                available_dates = client.get_available_dates()
+            else:
+                try:
+                    client = create_sftp_client(
+                        host=config.SFTP_HOST,
+                        port=config.SFTP_PORT,
+                        username=config.SFTP_USERNAME,
+                        password=config.SFTP_PASSWORD,
+                        pkey=config.SFTP_KEY
+                    )
+                    available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH)
+                    client.close()
+                except Exception as e:
+                    logger.warning(f"SFTP failed: {e}")
+                    if config.TEST_MODE:
+                        logger.warning("Using mock fallback (TEST_MODE=true)")
+                        from app.sftp_client import MockSFTPClient
+                        client = MockSFTPClient(
+                            host=config.SFTP_HOST or "mock",
+                            username=config.SFTP_USERNAME,
+                            password=config.SFTP_PASSWORD
+                        )
+                        available_dates = client.get_available_dates()
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail=f"SFTP 연결 실패: {str(e)}"
+                        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get available dates: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"날짜 범위 조회 실패: {str(e)}"
+            )
+        
+        # Step 2: Get completed dates from database
+        completed_dates = db.get_completed_date_range(req.start_date, req.end_date)
+        logger.info(f"Completed dates in range: {completed_dates}")
+        
+        # Step 3: Analyze and classify case
+        analysis = analyze_batch_case(
+            start_date=req.start_date,
+            end_date=req.end_date,
+            available_dates=available_dates,
+            completed_dates=completed_dates
+        )
+        
+        # Step 4: Convert to response format
+        response_options = [
+            BatchAnalysisOption(
+                option_id=opt.option_id,
+                label=opt.label,
+                description=opt.description,
+                action_config=opt.action_config
+            )
+            for opt in analysis.options
+        ]
+        
+        return BatchAnalysisResponse(
+            case=analysis.case,
+            user_range=analysis.user_range,
+            completed_range=analysis.completed_range,
+            overlap_dates=analysis.overlap_dates,
+            new_dates=analysis.new_dates,
+            options=response_options
+        )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Failed to analyze batch: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"배치 분석 실패: {str(e)}"
         )
