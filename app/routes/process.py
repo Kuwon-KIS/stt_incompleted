@@ -223,23 +223,26 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
 
         results = []
         
-        # APP_ENV=local이면 Mock 배치 처리 (매우 빠름)
+        # APP_ENV=local이면 Mock 배치 처리 (병렬 처리)
         if config.APP_ENV == "local":
-            logger.info("[BATCH_MODE] Mock mode: creating sample results...")
+            logger.info("[BATCH_MODE] Mock mode: creating sample results with parallel processing...")
             
             # 날짜 범위 내의 모든 날짜 생성
             current = datetime.strptime(req.start_date, "%Y%m%d")
             end = datetime.strptime(req.end_date, "%Y%m%d")
             
             mock_results = []
-            file_idx = 0
             date_files = {}  # 날짜별 파일 수 추적
+            
+            # 병렬 처리할 파일 목록 사전 생성
+            files_to_process = []
+            file_idx = 0
             
             while current <= end:
                 date_str = current.strftime("%Y%m%d")
                 date_files[date_str] = {"total": 0, "success": 0, "failed": 0}
                 
-                # 각 날짜마다 3개의 파일 생성
+                # 각 날짜마다 3개의 파일
                 for i in range(1, 4):
                     filename = f"{date_str}_{i:03d}.txt"
                     
@@ -263,9 +266,30 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                         }
                     ]
                     
+                    files_to_process.append({
+                        "index": file_idx,
+                        "date": date_str,
+                        "filename": filename,
+                        "mock_issues": mock_issues
+                    })
+                    file_idx += 1
+                
+                current += timedelta(days=1)
+            
+            # ThreadPoolExecutor로 Mock 파일들 병렬 처리
+            def process_mock_file(file_info):
+                """Mock 파일 처리 함수 (병렬 실행용)"""
+                try:
+                    date_str = file_info["date"]
+                    filename = file_info["filename"]
+                    mock_issues = file_info["mock_issues"]
+                    
+                    logger.debug("[BATCH_MOCK_FILE] Processing: %s (thread=%s)", 
+                               filename, threading.current_thread().ident)
+                    
                     now = datetime.now(timezone.utc)
                     result_item = {
-                        "index": file_idx,
+                        "index": file_info["index"],
                         "date": date_str,
                         "filename": filename,
                         "success": True,
@@ -277,14 +301,33 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                         "processing_time_ms": 100,
                         "created_at": now
                     }
-                    mock_results.append(result_item)
-                    file_idx += 1
-                    date_files[date_str]["total"] += 1
-                    date_files[date_str]["success"] += 1
-                
-                current += timedelta(days=1)
+                    logger.debug("[BATCH_MOCK_OK] %s processed successfully", filename)
+                    return result_item, True
+                    
+                except Exception as e:
+                    logger.warning("[BATCH_MOCK_ERROR] Failed to process mock file: %s", str(e))
+                    return None, False
             
-            logger.info("[BATCH_RESULTS_GENERATING] Generated %d mock results", len(mock_results))
+            logger.info("[BATCH_MOCK_PARALLEL_START] Processing %d mock files in parallel", len(files_to_process))
+            
+            with ThreadPoolExecutor(max_workers=5, thread_name_prefix=f"batch-mock-{job_id}-") as mock_executor:
+                mock_futures = [mock_executor.submit(process_mock_file, f) for f in files_to_process]
+                
+                # 모든 파일 처리 완료 대기
+                for future in as_completed(mock_futures):
+                    try:
+                        result_item, success = future.result()
+                        if success:
+                            mock_results.append(result_item)
+                            date_str = result_item["date"]
+                            date_files[date_str]["total"] += 1
+                            date_files[date_str]["success"] += 1
+                        else:
+                            logger.warning("[BATCH_MOCK_FAILED] Mock file processing failed")
+                    except Exception as e:
+                        logger.error("[BATCH_MOCK_FUTURE_ERROR] Error retrieving mock result: %s", e)
+            
+            logger.info("[BATCH_MOCK_PARALLEL_COMPLETE] Mock parallel processing complete: %d files", len(mock_results))
             results = mock_results
             logger.info("[BATCH_MOCK_COMPLETE] Mock batch processing complete: %d files", len(results))
         else:
@@ -324,12 +367,13 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                         files = sftp_client.list_files(path=date_path, pattern="*.txt")
                         logger.info("[BATCH_FILES_FOUND] Found %d files for date %s", len(files), date_str)
                         
-                        # 3. 각 파일 처리 (순차적 - SQLite 동시성 제약)
-                        # TODO: ThreadPoolExecutor로 동시 처리 가능 (향후 개선)
-                        for file_path in files:
+                        # 3. 각 파일 처리 (ThreadPoolExecutor로 병렬 처리)
+                        def process_file(file_path):
+                            """단일 파일 처리 함수 (병렬 실행용)"""
                             try:
                                 filename = file_path.split("/")[-1]
-                                logger.debug("[BATCH_FILE_PROCESS] Processing: %s", filename)
+                                logger.debug("[BATCH_FILE_PROCESS] Processing: %s (thread=%s)", 
+                                           filename, threading.current_thread().ident)
                                 
                                 # 파일 내용 읽기
                                 content = sftp_client.read_file(file_path)
@@ -352,17 +396,40 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                     "processing_time_ms": ai_result.get("processing_time_ms", 0),
                                     "created_at": now
                                 }
-                                real_results.append(result_item)
-                                date_files[date_str]["total"] += 1
-                                date_files[date_str]["success"] += 1
-                                
                                 logger.debug("[BATCH_FILE_OK] %s processed successfully", filename)
+                                return result_item, True, None
                                 
                             except Exception as file_error:
                                 logger.warning("[BATCH_FILE_ERROR] Failed to process %s: %s", 
                                              filename, str(file_error))
-                                date_files[date_str]["total"] += 1
-                                date_files[date_str]["failed"] += 1
+                                return None, False, str(file_error)
+                        
+                        # ThreadPoolExecutor로 파일들을 병렬 처리
+                        logger.info("[BATCH_PARALLEL_START] Processing %d files in parallel", len(files))
+                        file_futures = []
+                        
+                        with ThreadPoolExecutor(max_workers=5, thread_name_prefix=f"batch-{job_id}-") as file_executor:
+                            for file_path in files:
+                                future = file_executor.submit(process_file, file_path)
+                                file_futures.append(future)
+                            
+                            # 모든 파일 처리 완료 대기
+                            for future in as_completed(file_futures):
+                                try:
+                                    result_item, success, error = future.result()
+                                    if success:
+                                        real_results.append(result_item)
+                                        date_files[date_str]["success"] += 1
+                                    else:
+                                        date_files[date_str]["failed"] += 1
+                                    date_files[date_str]["total"] += 1
+                                except Exception as e:
+                                    logger.error("[BATCH_FUTURE_ERROR] Error retrieving file result: %s", e)
+                                    date_files[date_str]["failed"] += 1
+                                    date_files[date_str]["total"] += 1
+                        
+                        logger.info("[BATCH_PARALLEL_COMPLETE] Parallel processing complete for date %s: %d files", 
+                                   date_str, len(files))
                         
                         current += timedelta(days=1)
                     
