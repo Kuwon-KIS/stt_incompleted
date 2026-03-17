@@ -26,7 +26,8 @@ from .models import (
 from .sftp_client import SFTPClient
 from .detection import get_detector
 from .utils import setup_logging, get_credentials_from_env, is_retriable_error
-from .routes import health, process, templates, sftp, proxy, web
+from .routes import health, process, templates, sftp, proxy, web, admin
+from .database import DatabaseManager
 
 # Setup logging
 setup_logging(config.LOG_LEVEL)
@@ -46,12 +47,21 @@ app.include_router(templates.router)
 app.include_router(process.router)
 app.include_router(sftp.router)
 app.include_router(proxy.router)
+app.include_router(admin.router)
 
 # Mount static files for web UI (if directory exists)
 static_dir = pathlib.Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     logger.info("mounted static files from %s", static_dir)
+
+# Initialize database
+try:
+    db_manager = DatabaseManager()
+    logger.info("Database initialized successfully")
+except Exception as e:
+    logger.error("Failed to initialize database: %s", e)
+    raise
 
 # Application state
 START_TIME = time.time()
