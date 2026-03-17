@@ -348,8 +348,7 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                     port=config.SFTP_PORT,
                     username=config.SFTP_USERNAME,
                     password=config.SFTP_PASSWORD,
-                    key_path=config.SFTP_KEY,
-                    root_path=config.SFTP_ROOT_PATH
+                    pkey=config.SFTP_KEY
                 )
                 
                 # 2. 날짜 범위별 파일 조회
