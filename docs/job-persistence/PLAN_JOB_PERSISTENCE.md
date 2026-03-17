@@ -91,12 +91,18 @@ CREATE TABLE date_status (
     "year": 2026,
     "month": 3,
     "dates": {
-      "2026-03-14": { "status": "completed", "total": 9, "processed": 9, "failed": 0 },
-      "2026-03-15": { "status": "partial", "total": 5, "processed": 3, "failed": 0 },
-      "2026-03-16": { "status": "unprocessed", "total": 0, "processed": 0, "failed": 0 }
+      "2026-03-14": { "status": "done", "total": 9, "processed": 9, "failed": 0 },
+      "2026-03-15": { "status": "incomplete", "total": 5, "processed": 3, "failed": 2 },
+      "2026-03-16": { "status": "ready", "total": 0, "processed": 0, "failed": 0 }
     }
   }
   ```
+
+상태 정의:
+- `ready`: 미처리 (처리 대상 없음)
+- `done`: 전체 성공
+- `incomplete`: 일부 실패
+- `failed`: 전체 실패
 
 ### 2.4 Batch 처리 로직 수정
 - `POST /process/batch/submit` 수정
@@ -185,11 +191,15 @@ CREATE TABLE date_status (
 - [ ] DB 상태 조회 API
 
 ### 4.2 Phase 2 (Backend 개선) - Week 2
-- [ ] Job 저장 로직 DB 기반으로 변경
-- [ ] 결과 저장 로직 DB 기반으로 변경
-- [ ] 날짜별 상태 조회 API
-- [ ] 월별 캘린더 데이터 API
-- [ ] 이전 처리 정보 확인 로직
+- [x] Job 저장 로직 DB 기반으로 변경
+- [x] 결과 저장 로직 DB 기반으로 변경
+- [x] 날짜별 상태 조회 API
+- [x] 월별 캘린더 데이터 API
+- [x] 이전 처리 정보 확인 로직
+- [x] updated_at 스키마 추가
+- [x] Mock 모드 배치 처리 구현
+- [x] API 문서 업데이트
+- [x] 코드 정리 및 디버그 로그 제거
 
 ### 4.3 Phase 3 (Frontend 개선) - Week 3
 - [ ] CalendarPicker 컴포넌트 개발

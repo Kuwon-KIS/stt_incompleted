@@ -308,6 +308,8 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
             # 날짜별 상태 업데이트
             logger.info("[BATCH_DATE_STATUS_UPDATE] Updating status for %d dates", len(date_files))
             for date_str, stats in date_files.items():
+                # 날짜별 상태 레코드 생성 (없으면 생성, 있으면 조회)
+                db.get_or_create_date_status(date_str)
                 status = determine_date_status(stats["total"], stats["success"], stats["failed"])
                 db.update_date_status(
                     date_str,

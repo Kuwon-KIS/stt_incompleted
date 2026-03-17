@@ -79,10 +79,12 @@ curl http://127.0.0.1:8002/health
 
 # Detailed health check
 curl http://127.0.0.1:8002/healthz
-# Response: {"status":"ok","uptime_seconds":X,"environment":"dev"}
+# Response: {"status":"ok","uptime_seconds":X,"environment":"local"}
 ```
 
-### Process Text
+### Process Endpoints (`/process`)
+
+#### Single Text Processing
 ```bash
 curl -X POST http://127.0.0.1:8002/process \
   -H "Content-Type: application/json" \
@@ -93,15 +95,100 @@ curl -X POST http://127.0.0.1:8002/process \
   }'
 ```
 
-### Get Templates
+#### Batch Processing
+
+**Submit Batch Job**
 ```bash
-curl http://127.0.0.1:8002/templates
-# Response: List of all available templates
+curl -X POST http://127.0.0.1:8002/process/batch/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_date": "20260314",
+    "end_date": "20260314"
+  }'
+# Response: {"job_id":"uuid","status":"submitted","date_range":"20260314 to 20260314"}
 ```
 
-### View Job Status
+**Check Batch Job Status**
 ```bash
-curl http://127.0.0.1:8002/jobs/{job_id}
+curl http://127.0.0.1:8002/process/batch/status/{job_id}
+# Response: Full job details with results
+```
+
+**Get Calendar Status**
+```bash
+curl http://127.0.0.1:8002/process/calendar/status/2026/03
+# Response:
+{
+  "year": 2026,
+  "month": 3,
+  "dates": {
+    "2026-03-14": { "status": "done", "total": 3, "processed": 3, "failed": 0 },
+    "2026-03-15": { "status": "incomplete", "total": 2, "processed": 1, "failed": 1 },
+    "2026-03-16": { "status": "ready", "total": 0, "processed": 0, "failed": 0 }
+  }
+}
+```
+
+상태 값:
+- `ready`: 미처리 (처리 대상 없음)
+- `done`: 전체 성공
+- `incomplete`: 일부 실패
+- `failed`: 전체 실패
+
+### Template Management (`/templates`)
+
+**List All Templates**
+```bash
+curl http://127.0.0.1:8002/templates
+```
+
+**Get Specific Template**
+```bash
+curl http://127.0.0.1:8002/templates/{template_name}
+```
+
+**Create Template**
+```bash
+curl -X POST http://127.0.0.1:8002/templates \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "template_name",
+    "content": "template_content"
+  }'
+```
+
+**Delete Template**
+```bash
+curl -X DELETE http://127.0.0.1:8002/templates/{template_name}
+```
+
+### SFTP Management (`/sftp`)
+
+**List SFTP Files**
+```bash
+curl -X POST http://127.0.0.1:8002/sftp/list \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/remote/path"}'
+```
+
+### Admin APIs (`/api/admin`)
+
+**Initialize Database**
+```bash
+curl -X POST http://127.0.0.1:8002/api/admin/db/init \
+  -H "Content-Type: application/json"
+```
+
+**Reset Database** (Drop all tables & reinitialize)
+```bash
+curl -X POST http://127.0.0.1:8002/api/admin/db/reset \
+  -H "Content-Type: application/json"
+```
+
+**Get Database Status**
+```bash
+curl http://127.0.0.1:8002/api/admin/db/status
+# Response: {"db_file":"/path/to/db","jobs":N,"results":N}
 ```
 
 ## 📁 Project Structure
