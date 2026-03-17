@@ -191,22 +191,24 @@ CREATE TABLE date_status (
 - [ ] DB 상태 조회 API
 
 ### 4.2 Phase 2 (Backend 개선) - Week 2
-- [x] Job 저장 로직 DB 기반으로 변경
-- [x] 결과 저장 로직 DB 기반으로 변경
-- [x] 날짜별 상태 조회 API
-- [x] 월별 캘린더 데이터 API
-- [x] 이전 처리 정보 확인 로직
-- [x] updated_at 스키마 추가
 - [x] Mock 모드 배치 처리 구현
-- [x] API 문서 업데이트
-- [x] 코드 정리 및 디버그 로그 제거
+- [x] DB 기반 결과 저장 (batch_results)
+- [x] 날짜별 상태 조회 API (calendar/status)
+- [x] 월별 캘린더 데이터 API
+- [x] updated_at 스키마 추가
+- [x] **Real 모드 구현 (SFTP + AI)** ✨ NEW
+  - SFTP 파일 조회
+  - AI 처리 (vLLM/Agent)
+  - 에러 핸들링 및 통계 집계
+- [x] 공통 DB 저장 로직 (중복 제거)
+- [x] API 문서 완성
 
-### 4.3 Phase 3 (Frontend 개선) - Week 3
-- [ ] CalendarPicker 컴포넌트 개발
-- [ ] 배치 처리 페이지 UI 개선
-- [ ] 처리 옵션 UI 추가
-- [ ] 작업 이력 페이지 개선
-- [ ] 스마트 처리 로직 통합
+### 4.3 Phase 3 (중복 처리 방지) - Week 3
+- [ ] 배치 제출 시 중복 확인 로직
+- [ ] 동일 날짜 범위 기존 job 조회
+- [ ] running/completed 상태 job 처리
+- [ ] 상태별 응답 정의 (new job vs existing job)
+- [ ] 통합 테스트
 
 ### 4.4 Phase 4 (테스트 & 최적화) - Week 4
 - [ ] 단위 테스트

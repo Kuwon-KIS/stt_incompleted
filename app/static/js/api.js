@@ -61,12 +61,20 @@ class API {
     // ===== Batch Processing =====
 
     /**
-     * 배치 처리 시작 (비동기)
+     * 배치 처리 시작 (3가지 케이스 처리)
+     * 
+     * @param {Object} batchData
+     *   - startDate: 시작 날짜 (YYYYMMDD)
+     *   - endDate: 종료 날짜 (YYYYMMDD)
+     *   - forceReprocess: boolean (기본값: false) - 기존 완료된 작업도 재처리
+     *   - handleOverlap: string (기본값: "new") - "new" / "reprocess_all" / "skip_overlap"
      */
     async submitBatch(batchData) {
         return this.post('/process/batch/submit', {
             start_date: batchData.startDate,
             end_date: batchData.endDate,
+            force_reprocess: batchData.forceReprocess || false,
+            handle_overlap: batchData.handleOverlap || "new"
         });
     }
 

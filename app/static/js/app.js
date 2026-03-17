@@ -172,6 +172,8 @@ class App {
     async handleBatchSubmit() {
         const startDateInput = document.getElementById('start-date');
         const endDateInput = document.getElementById('end-date');
+        const forceReprocessCheckbox = document.getElementById('force-reprocess');
+        const handleOverlapRadio = document.querySelector('input[name="handle-overlap"]:checked');
 
         if (!startDateInput || !endDateInput) {
             alert('날짜 입력 필드를 찾을 수 없습니다.');
@@ -192,6 +194,12 @@ class App {
         }
 
         try {
+            // 옵션값 수집
+            const forceReprocess = forceReprocessCheckbox?.checked || false;
+            const handleOverlap = handleOverlapRadio?.value || 'new';
+
+            console.log(`📋 배치 옵션: forceReprocess=${forceReprocess}, handleOverlap=${handleOverlap}`);
+
             // 진행 상황 표시
             const progressContainer = document.getElementById('progress-container');
             const resultsContainer = document.getElementById('results-container');
@@ -199,24 +207,74 @@ class App {
             if (progressContainer) progressContainer.style.display = 'block';
             if (resultsContainer) resultsContainer.style.display = 'none';
 
-            // 배치 작업 제출
-            const response = await fetch('/process/batch/submit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ start_date: startDate, end_date: endDate })
+            // 배치 작업 제출 (새 API 사용)
+            const response = await api.submitBatch({
+                startDate: startDate,
+                endDate: endDate,
+                forceReprocess: forceReprocess,
+                handleOverlap: handleOverlap
             });
 
-            if (!response.ok) throw new Error('Batch submission failed');
-            
-            const data = await response.json();
-            const jobId = data.job_id;
-            console.log(`✅ 배치 작업 제출: ${jobId}`);
+            console.log('📨 API 응답:', response);
 
-            // 작업 모니터링 시작
-            this.monitorBatchJob(jobId);
+            // 응답 케이스별 처리
+            if (response.status === 'submitted' && response.case === 'no_overlap') {
+                // ✅ 케이스 3: 새 작업 생성 - 모니터링 시작
+                const jobId = response.job_id;
+                console.log(`✅ 새 배치 작업 생성: ${jobId}`);
+                this.monitorBatchJob(jobId);
+
+            } else if (response.status === 'duplicate' && response.case === 'exact_overlap') {
+                // ⚠️ 케이스 1: 전체 겹침
+                if (forceReprocess) {
+                    // force_reprocess=true인데 여기 올 수 없음 (백엔드에서 새 job 생성)
+                    console.log(`✅ 강제 재처리 중...`);
+                    this.monitorBatchJob(response.job_id);
+                } else {
+                    // force_reprocess=false - 기존 작업 반환
+                    alert(`❌ 동일한 범위의 작업이 이미 ${response.message}\n\n작업 ID: ${response.job_id}`);
+                    const resultsContainer = document.getElementById('results-container');
+                    if (resultsContainer) resultsContainer.style.display = 'block';
+                    if (progressContainer) progressContainer.style.display = 'none';
+                }
+
+            } else if (response.status === 'partial_overlap_detected' && response.case === 'partial_overlap') {
+                // ⚠️ 케이스 2: 부분 겹침
+                const overlappingInfo = response.overlapping_jobs
+                    .map(j => `• ${j.range} (${j.status})`)
+                    .join('\n');
+                
+                const options = Object.entries(response.available_options)
+                    .map(([key, desc]) => `• ${key}: ${desc}`)
+                    .join('\n');
+
+                alert(
+                    `⚠️ 부분적으로 겹치는 작업이 발견되었습니다\n\n` +
+                    `겹치는 작업들:\n${overlappingInfo}\n\n` +
+                    `처리 방식:\n${options}\n\n` +
+                    `다시 시도할 때 처리 방식을 선택하세요.`
+                );
+                
+                const resultsContainer = document.getElementById('results-container');
+                if (resultsContainer) resultsContainer.style.display = 'none';
+                if (progressContainer) progressContainer.style.display = 'none';
+
+            } else if (response.status === 'error') {
+                // ❌ 에러
+                alert(`❌ 처리 실패: ${response.message}`);
+                if (progressContainer) progressContainer.style.display = 'none';
+
+            } else {
+                // 예상 외의 응답
+                console.warn('예상 외의 응답:', response);
+                alert(`예상 외의 응답이 발생했습니다: ${response.status}`);
+            }
+
         } catch (error) {
             alert(`배치 처리 실패: ${error.message}`);
             console.error('배치 처리 오류:', error);
+            const progressContainer = document.getElementById('progress-container');
+            if (progressContainer) progressContainer.style.display = 'none';
         }
     }
 

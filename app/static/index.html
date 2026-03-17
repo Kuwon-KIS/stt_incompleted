@@ -90,8 +90,44 @@
                                 <input type="date" id="end-date" required>
                             </div>
 
+                            <!-- Reprocess Options -->
+                            <fieldset class="form-group" style="grid-column: 1 / -1; border: 1px solid #ddd; padding: 12px; border-radius: 4px;">
+                                <legend style="padding: 0 8px; font-weight: 600; font-size: 0.95em;">재처리 옵션</legend>
+                                
+                                <div style="margin-bottom: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                        <input type="checkbox" id="force-reprocess" name="force-reprocess">
+                                        <span>기존 완료된 작업도 재처리</span>
+                                    </label>
+                                    <small style="color: #666; margin-left: 24px; display: block;">체크 시 정확히 동일한 날짜 범위가 있어도 새로 처리합니다</small>
+                                </div>
+
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px;">겹치는 범위 처리 방식</label>
+                                    <div style="margin-left: 24px;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer;">
+                                            <input type="radio" name="handle-overlap" value="new" checked>
+                                            <span><strong>새로 처리</strong> (기본값)</span>
+                                        </label>
+                                        <small style="color: #666; margin-left: 24px; display: block; margin-bottom: 12px;">기존 작업과 겹치는 범위가 있어도 무시하고 새로 처리</small>
+                                        
+                                        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer;">
+                                            <input type="radio" name="handle-overlap" value="reprocess_all">
+                                            <span><strong>전체 재처리</strong></span>
+                                        </label>
+                                        <small style="color: #666; margin-left: 24px; display: block; margin-bottom: 12px;">겹치는 범위 포함하여 전체 범위를 다시 처리</small>
+                                        
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="handle-overlap" value="skip_overlap">
+                                            <span><strong>겹치는 부분 제외</strong></span>
+                                        </label>
+                                        <small style="color: #666; margin-left: 24px; display: block;">이미 처리된 부분은 제외하고 새로운 부분만 처리</small>
+                                    </div>
+                                </div>
+                            </fieldset>
+
                             <!-- Submit Buttons -->
-                            <div class="form-actions">
+                            <div class="form-actions" style="grid-column: 1 / -1;">
                                 <button type="submit" class="btn btn-primary">처리 시작</button>
                                 <button type="reset" class="btn btn-secondary">초기화</button>
                             </div>

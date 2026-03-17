@@ -285,10 +285,105 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                 current += timedelta(days=1)
             
             logger.info("[BATCH_RESULTS_GENERATING] Generated %d mock results", len(mock_results))
+            results = mock_results
+            logger.info("[BATCH_MOCK_COMPLETE] Mock batch processing complete: %d files", len(results))
+        else:
+            # Real batch processing - SFTP에서 파일 조회 및 AI 처리
+            logger.info("[BATCH_MODE] Real mode: reading from SFTP and processing with AI")
             
-            # DB에 결과 저장
-            logger.info("[BATCH_DB_INSERT_START] Saving %d results to database", len(mock_results))
-            for idx, result_data in enumerate(mock_results):
+            try:
+                from .sftp import SFTPClient
+                
+                # 1. SFTP 클라이언트 초기화
+                logger.info("[BATCH_SFTP_INIT] Initializing SFTP client: %s:%d", 
+                           config.SFTP_HOST, config.SFTP_PORT)
+                sftp_client = SFTPClient(
+                    host=config.SFTP_HOST,
+                    port=config.SFTP_PORT,
+                    username=config.SFTP_USERNAME,
+                    password=config.SFTP_PASSWORD,
+                    key_path=config.SFTP_KEY,
+                    root_path=config.SFTP_ROOT_PATH
+                )
+                
+                # 2. 날짜 범위별 파일 조회
+                real_results = []
+                date_files = {}
+                current = datetime.strptime(req.start_date, "%Y%m%d")
+                end = datetime.strptime(req.end_date, "%Y%m%d")
+                
+                while current <= end:
+                    date_str = current.strftime("%Y%m%d")
+                    date_path = f"{config.SFTP_ROOT_PATH}/{date_str}"
+                    date_files[date_str] = {"total": 0, "success": 0, "failed": 0}
+                    
+                    logger.info("[BATCH_SFTP_LIST] Listing files in: %s", date_path)
+                    
+                    try:
+                        # 해당 날짜 디렉토리에서 .txt 파일 조회
+                        files = sftp_client.list_files(path=date_path, pattern="*.txt")
+                        logger.info("[BATCH_FILES_FOUND] Found %d files for date %s", len(files), date_str)
+                        
+                        # 3. 각 파일 처리 (순차적 - SQLite 동시성 제약)
+                        # TODO: ThreadPoolExecutor로 동시 처리 가능 (향후 개선)
+                        for file_path in files:
+                            try:
+                                filename = file_path.split("/")[-1]
+                                logger.debug("[BATCH_FILE_PROCESS] Processing: %s", filename)
+                                
+                                # 파일 내용 읽기
+                                content = sftp_client.read_file(file_path)
+                                
+                                # AI 처리 (vLLM 또는 Agent)
+                                detector = get_detector(config.CALL_TYPE)
+                                ai_result = detector.detect(content)
+                                
+                                # 결과 변환
+                                now = datetime.now(timezone.utc)
+                                result_item = {
+                                    "date": date_str,
+                                    "filename": filename,
+                                    "success": True,
+                                    "text": content,
+                                    "category": ai_result.get("category", "unknown"),
+                                    "summary": ai_result.get("summary", ""),
+                                    "omission_num": str(ai_result.get("omission_num", 0)),
+                                    "detected_issues": ai_result.get("detected_issues", []),
+                                    "processing_time_ms": ai_result.get("processing_time_ms", 0),
+                                    "created_at": now
+                                }
+                                real_results.append(result_item)
+                                date_files[date_str]["total"] += 1
+                                date_files[date_str]["success"] += 1
+                                
+                                logger.debug("[BATCH_FILE_OK] %s processed successfully", filename)
+                                
+                            except Exception as file_error:
+                                logger.warning("[BATCH_FILE_ERROR] Failed to process %s: %s", 
+                                             filename, str(file_error))
+                                date_files[date_str]["total"] += 1
+                                date_files[date_str]["failed"] += 1
+                        
+                        current += timedelta(days=1)
+                    
+                    except Exception as dir_error:
+                        logger.warning("[BATCH_DIR_ERROR] Failed to access directory %s: %s", 
+                                     date_path, str(dir_error))
+                        current += timedelta(days=1)
+                
+                logger.info("[BATCH_REAL_RESULTS] Real mode processing complete: %d files", len(real_results))
+                results = real_results
+                
+                # 4. 공통 DB 저장 로직 (아래에서 처리)
+                
+            except Exception as sftp_error:
+                logger.exception("[BATCH_REAL_ERROR] Real mode processing failed: %s", sftp_error)
+                raise
+        
+        # ===== 공통 DB 저장 로직 (Local/Real 모드 모두) =====
+        logger.info("[BATCH_DB_INSERT_START] Saving %d results to database", len(results))
+        for result_data in results:
+            try:
                 result = BatchResult(
                     job_id=job_id,
                     file_date=result_data["date"],
@@ -303,12 +398,15 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                     created_at=result_data.get("created_at", datetime.now(timezone.utc))
                 )
                 db.create_result(result)
-            logger.info("[BATCH_DB_INSERT_OK] Saved %d results to database", len(mock_results))
-            
-            # 날짜별 상태 업데이트
-            logger.info("[BATCH_DATE_STATUS_UPDATE] Updating status for %d dates", len(date_files))
-            for date_str, stats in date_files.items():
-                # 날짜별 상태 레코드 생성 (없으면 생성, 있으면 조회)
+            except Exception as db_error:
+                logger.error("[BATCH_DB_ERROR] Failed to save result for %s: %s", 
+                           result_data.get("filename"), str(db_error))
+        logger.info("[BATCH_DB_INSERT_OK] Saved %d results to database", len(results))
+        
+        # 날짜별 상태 업데이트 (공통)
+        logger.info("[BATCH_DATE_STATUS_UPDATE] Updating status for %d dates", len(date_files))
+        for date_str, stats in date_files.items():
+            try:
                 db.get_or_create_date_status(date_str)
                 status = determine_date_status(stats["total"], stats["success"], stats["failed"])
                 db.update_date_status(
@@ -320,16 +418,10 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                 )
                 logger.debug("[BATCH_DATE_STATUS] date=%s, total=%d, success=%d, status=%s", 
                             date_str, stats["total"], stats["success"], status)
-            logger.info("[BATCH_DATE_STATUS_OK] Updated status for %d dates", len(date_files))
-            
-            results = mock_results
-            logger.info("[BATCH_MOCK_COMPLETE] Mock batch processing complete: %d files", len(results))
-        else:
-            # Real batch processing - 실제 환경에서는 여기서 실행
-            logger.info("[BATCH_MODE] Real mode (not yet implemented)")
-            pass
-        
-        # 배치 작업 통계 업데이트
+            except Exception as status_error:
+                logger.error("[BATCH_STATUS_ERROR] Failed to update date status for %s: %s", 
+                           date_str, str(status_error))
+        logger.info("[BATCH_DATE_STATUS_OK] Updated status for %d dates", len(date_files))
         logger.info("[BATCH_STATS_UPDATE] Updating job statistics")
         db.update_job_stats(
             job_id,
@@ -393,15 +485,100 @@ async def process_batch(req: BatchProcessRequest):
 
 @router.post("/batch/submit")
 async def process_batch_submit(req: BatchProcessRequest):
-    """Submit a batch job and return job_id. The job runs asynchronously in background."""
-    print(f"\n[BATCH_SUBMIT_ENDPOINT] Received request START", flush=True)
-    logger.info("[BATCH_SUBMIT] Received request: start_date=%s, end_date=%s", req.start_date, req.end_date)
+    """Submit a batch job with conflict detection and handling options.
+    
+    3가지 케이스 처리:
+    1. 전체 겹침 (정확히 동일한 범위): force_reprocess=False면 기존 반환, True면 재처리
+    2. 부분 겹침: handle_overlap로 처리 방식 결정 ("new"/"reprocess_all"/"skip_overlap")
+    3. 안 겹침: 새 작업 생성
+    """
+    logger.info("[BATCH_SUBMIT] Received: start=%s, end=%s, force_reprocess=%s, handle_overlap=%s",
+               req.start_date, req.end_date, req.force_reprocess, req.handle_overlap)
+    
+    # 1. 겹치는 기존 작업 조회
+    existing_jobs = db.get_jobs_by_date_range(req.start_date, req.end_date)
+    
+    # 완료/실행 중인 작업만 필터링
+    active_jobs = [job for job in existing_jobs 
+                   if job["status"] in ["running", "completed"]]
+    
+    # 2. 겹침 여부 판단
+    if active_jobs:
+        # 전체 겹침인지 부분 겹침인지 확인
+        exact_match = any(
+            job["start_date"] == req.start_date and job["end_date"] == req.end_date
+            for job in active_jobs
+        )
+        
+        # ===== 케이스 1: 전체 겹침 (정확히 동일한 범위) =====
+        if exact_match:
+            matching_job = next(
+                (job for job in active_jobs 
+                 if job["start_date"] == req.start_date and job["end_date"] == req.end_date),
+                active_jobs[0]
+            )
+            
+            if req.force_reprocess:
+                # 강제 재처리: 새로운 job 생성 (이 경우 아래로 진행)
+                logger.info("[BATCH_EXACT_OVERLAP_REPROCESS] Force reprocess enabled for %s-%s",
+                           req.start_date, req.end_date)
+            else:
+                # 기존 작업 반환
+                logger.info("[BATCH_EXACT_OVERLAP_SKIP] Returning existing job: %s",
+                           matching_job["id"])
+                return {
+                    "job_id": matching_job["id"],
+                    "status": "duplicate",
+                    "case": "exact_overlap",
+                    "message": f"정확히 동일한 범위의 작업이 이미 {matching_job['status']} 상태입니다",
+                    "date_range": f"{req.start_date} to {req.end_date}",
+                    "original_created_at": matching_job["created_at"].isoformat() if hasattr(matching_job["created_at"], "isoformat") else str(matching_job["created_at"]),
+                    "force_reprocess": req.force_reprocess,
+                    "handle_overlap": req.handle_overlap
+                }
+        
+        # ===== 케이스 2: 부분 겹침 =====
+        else:
+            logger.info("[BATCH_PARTIAL_OVERLAP] Partial overlap detected for %s-%s",
+                       req.start_date, req.end_date)
+            
+            if req.handle_overlap == "new":
+                # 기존 방식: 부분 겹침 무시하고 새 작업 생성 (아래로 진행)
+                logger.info("[BATCH_PARTIAL_NEW] Creating new job (ignoring overlap)")
+                # 아래로 진행하여 새 job 생성
+            
+            elif req.handle_overlap == "reprocess_all":
+                # 전체 재처리: 새로운 job 생성 (아래로 진행)
+                logger.info("[BATCH_PARTIAL_REPROCESS_ALL] Creating new job for full reprocess")
+                # 아래로 진행하여 새 job 생성
+            
+            elif req.handle_overlap == "skip_overlap":
+                # 겹치는 부분 제외하고 처리 (새 job이지만 메타데이터와 함께)
+                logger.info("[BATCH_PARTIAL_SKIP_OVERLAP] Creating new job, skipping overlapping dates")
+                # 아래로 진행하여 새 job 생성
+            
+            else:
+                # 잘못된 옵션
+                logger.warning("[BATCH_INVALID_OPTION] Invalid handle_overlap: %s", req.handle_overlap)
+                return {
+                    "job_id": None,
+                    "status": "error",
+                    "case": "partial_overlap",
+                    "message": f"잘못된 handle_overlap 값입니다. 'new', 'reprocess_all', 'skip_overlap' 중 선택하세요",
+                    "date_range": f"{req.start_date} to {req.end_date}",
+                    "error": f"Invalid handle_overlap: {req.handle_overlap}"
+                }
+            
+            # 부분 겹침일 때는 새 job을 생성하므로 아래로 진행
+    
+    # ===== 케이스 3: 겹침 없음 또는 재처리 옵션 선택 시 새 작업 생성 =====
+    logger.info("[BATCH_NO_OVERLAP] Creating new job for range %s-%s",
+               req.start_date, req.end_date)
     
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     
-    # Create job in database
-    logger.info("[BATCH_SUBMIT_DB] Creating job record in database")
+    logger.info("[BATCH_SUBMIT_DB] Creating job record: job_id=%s", job_id)
     job = BatchJob(
         id=job_id,
         status="pending",
@@ -411,25 +588,28 @@ async def process_batch_submit(req: BatchProcessRequest):
     )
     try:
         db.create_job(job)
-        logger.info("[BATCH_SUBMIT_DB_OK] Job created: job_id=%s", job_id)
+        logger.info("[BATCH_SUBMIT_DB_OK] Job created: %s", job_id)
     except Exception as e:
         logger.exception("[BATCH_SUBMIT_DB_ERROR] Failed to create job: %s", e)
         raise
 
-    # Start background task using ThreadPoolExecutor
-    logger.info("[BATCH_SUBMIT_THREAD] Executing batch synchronously for testing")
+    # 배치 처리 실행
+    logger.info("[BATCH_SUBMIT_THREAD] Executing batch processing: %s", job_id)
     try:
         run_batch_sync(job_id, req)
-        logger.info("[BATCH_SYNC_OK] Synchronous batch execution completed")
+        logger.info("[BATCH_SYNC_OK] Batch execution completed: %s", job_id)
     except Exception as e:
-        logger.exception("[BATCH_SYNC_ERROR] Synchronous batch execution failed: %s", e)
+        logger.exception("[BATCH_SYNC_ERROR] Batch execution failed: %s", e)
 
     response = {
-        "job_id": job_id, 
-        "status": "submitted", 
-        "date_range": f"{req.start_date} to {req.end_date}"
+        "job_id": job_id,
+        "status": "submitted",
+        "case": "no_overlap",
+        "date_range": f"{req.start_date} to {req.end_date}",
+        "force_reprocess": req.force_reprocess,
+        "handle_overlap": req.handle_overlap
     }
-    logger.info("[BATCH_SUBMIT_RESPONSE] Returning response: %s", response)
+    logger.info("[BATCH_SUBMIT_RESPONSE] New job submitted: %s", job_id)
     return response
 
 

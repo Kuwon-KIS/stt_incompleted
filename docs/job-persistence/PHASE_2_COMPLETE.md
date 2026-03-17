@@ -1,8 +1,9 @@
-# Phase 2: Job Persistence 배치 처리 통합 완료
+# Phase 2: Job Persistence 배치 처리 완전 구현
 
 **상태**: ✅ COMPLETE  
 **완료 날짜**: 2026-03-17  
-**주요 성과**: 데이터베이스 기반 배치 처리 시스템 구축 및 검증
+**범위**: Mock 모드 + Real 모드 (Local/Dev/Prod 환경 모두 지원)  
+**주요 성과**: DB 기반 배치 처리 시스템 구축 + 실제 환경 연동 파이프라인
 
 ---
 
@@ -77,13 +78,19 @@
    - 자동 job_id 생성 (UUID)
 
 3. 배치 처리 실행
-   - 상태 업데이트: "pending" → "running"
-   - Mock 모드 (APP_ENV=local):
-     * 날짜별로 3개의 샘플 파일 생성
-     * 각 파일마다 mock AI 분석 결과 생성
-   - Real 모드 (APP_ENV=dev/prod):
-     * SFTP에서 파일 조회 (미구현)
-     * AI Agent/vLLM 호출 (미구현)
+   
+   **Local 모드 (APP_ENV=local)**:
+   - Mock 데이터 생성 (날짜별 3개 파일)
+   - 각 파일마다 mock AI 분석 결과 생성
+   - 즉시 완료 (테스트용)
+   
+   **Real 모드 (APP_ENV=dev/prod)**: ✅ NEW
+   - SFTP 서버 연결 (config.SFTP_HOST)
+   - 날짜별 디렉토리에서 .txt 파일 조회
+   - 각 파일 내용 다운로드
+   - AI 처리 (vLLM 또는 Agent API)
+   - 부분 실패 허용 (파일별 독립 처리)
+   - 결과 집계
 
 4. 결과 저장 (DB)
    - batch_results 테이블에 개별 파일 결과 저장
@@ -206,7 +213,70 @@
 **수정 사항** (Phase 2 중):
 - `process.py` 라인 309: date_status 레코드 생성 로직 추가
 - `db.get_or_create_date_status(date_str)` 호출 후 `update_date_status()` 실행
-- 결과: 캘린더 데이터 정상 저장 및 조회 가능
+
+### 1.7 Real 모드 구현 (Dev/Prod 환경)
+
+**파일 위치**: `app/routes/process.py` 라인 328-415
+
+**처리 흐름**:
+
+```python
+# 1. SFTP 클라이언트 초기화
+sftp_client = SFTPClient(
+    host=config.SFTP_HOST,
+    port=config.SFTP_PORT,
+    username=config.SFTP_USERNAME,
+    key_path=config.SFTP_KEY
+)
+
+# 2. 날짜별 디렉토리 순회
+for date_str in date_range:
+    date_path = f"{SFTP_ROOT_PATH}/{date_str}/"
+    
+    # 3. .txt 파일 조회
+    files = sftp_client.list_files(path=date_path, pattern="*.txt")
+    
+    # 4. 각 파일 처리 (순차)
+    for file_path in files:
+        content = sftp_client.read_file(file_path)
+        ai_result = detector.detect(content)  # vLLM 또는 Agent
+        results.append(result_item)
+```
+
+**특징**:
+- ✅ SFTP 서버에서 실제 파일 조회
+- ✅ 파일별 에러 핸들링 (부분 실패 허용)
+- ✅ 순차 처리 (SQLite 동시성 안전)
+- ✅ 통계 자동 집계
+
+**에러 처리**:
+- 디렉토리 없으면 skip (다음 날짜로)
+- 파일 처리 실패해도 계속 (다른 파일 처리)
+- 실패 건수 통계에 반영
+
+**환경별 설정 (자동 로드)**:
+
+```bash
+# .env.local (Mock 모드)
+APP_ENV=local
+# SFTP/LLM 설정 불필요
+
+# .env.dev (Real 모드)
+APP_ENV=dev
+SFTP_HOST=sftp-dev.internal
+SFTP_PORT=22
+SFTP_USERNAME=app_dev
+SFTP_KEY=/path/to/key (또는 SFTP_PASSWORD)
+SFTP_ROOT_PATH=/uploads
+LLM_URL=https://vllm-dev.internal/v1/chat/completions
+AGENT_URL=https://agent-dev.internal/v1/analyze
+
+# .env.prod (Real 모드)
+APP_ENV=prod
+SFTP_HOST=sftp-prod-lb.internal  # 로드밸런서
+SFTP_KEY=/run/secrets/sftp_key   # 보안 마운트
+LLM_URL=https://vllm-prod-lb.internal/v1/chat/completions
+```
 
 ---
 

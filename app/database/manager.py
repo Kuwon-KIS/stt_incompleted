@@ -197,6 +197,46 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def get_jobs_by_date_range(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get jobs that overlap with the given date range (for duplicate detection).
+        
+        Returns jobs where:
+        - job.start_date <= given_end_date AND job.end_date >= given_start_date
+        
+        Sorted by created_at DESC (most recent first)
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT id, status, start_date, end_date, created_at, 
+                       total_files, success_files, failed_files
+                FROM batch_jobs 
+                WHERE start_date <= ? AND end_date >= ?
+                ORDER BY created_at DESC
+            """, (end_date, start_date))
+            
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                result.append({
+                    'id': row['id'],
+                    'status': row['status'],
+                    'start_date': row['start_date'],
+                    'end_date': row['end_date'],
+                    'created_at': row['created_at'],
+                    'total_files': row['total_files'],
+                    'success_files': row['success_files'],
+                    'failed_files': row['failed_files']
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get jobs by date range: {e}")
+            raise
+        finally:
+            conn.close()
+
     def update_job_status(self, job_id: str, status: str, 
                          error_message: Optional[str] = None) -> None:
         """Update job status."""
