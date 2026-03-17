@@ -153,27 +153,59 @@
                         </div>
                     </div>
 
-                    <!-- Job List -->
+                    <!-- Job List with Details -->
                     <div class="card">
-                        <table class="jobs-table" id="jobs-table">
-                            <thead>
-                                <tr>
-                                    <th>작업 ID</th>
-                                    <th>상태</th>
-                                    <th>생성 시간</th>
-                                    <th>처리 파일</th>
-                                    <th>작업</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr class="empty-state">
-                                    <td colspan="5">작업 이력이 없습니다</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div id="jobs-list" class="jobs-list">
+                            <p class="empty-state">작업 이력이 없습니다</p>
+                        </div>
                     </div>
                 </div>
             </section>
+
+            <!-- Detail Modal -->
+            <div id="detail-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modal-title">파일 상세 분석</h3>
+                        <button id="modal-close-btn" class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Original Text Section -->
+                        <div class="section">
+                            <h4>📝 원본 텍스트</h4>
+                            <div id="original-text" class="original-text"></div>
+                        </div>
+
+                        <!-- Analysis Result Section -->
+                        <div class="section">
+                            <h4>🔍 탐지 결과</h4>
+                            <div class="result-summary">
+                                <div class="summary-item">
+                                    <span class="summary-label">카테고리:</span>
+                                    <span id="modal-category">-</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">요약:</span>
+                                    <span id="modal-summary">-</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">누락건수:</span>
+                                    <span id="modal-omission-num" class="badge">0</span>
+                                </div>
+                            </div>
+
+                            <!-- Issues List -->
+                            <div id="issues-container" class="issues-container">
+                                <p class="empty-state">누락된 항목이 없습니다</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" id="modal-close-btn-footer">닫기</button>
+                        <button class="btn btn-primary" id="download-results">파일별 결과 내보내기</button>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <!-- Footer -->
