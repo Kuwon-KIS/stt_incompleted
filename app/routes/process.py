@@ -8,7 +8,7 @@ import time
 import os
 import uuid
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
@@ -19,13 +19,38 @@ from ..models import ProcessRequest, BatchProcessRequest
 from ..sftp_client import SFTPClient, create_sftp_client
 from ..detection import get_detector
 from ..utils import get_credentials_from_env
+from ..database import DatabaseManager, BatchJob, BatchResult, DateStatus
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/process", tags=["process"])
 
-# In-memory job store for async batch processing
-JOB_STORE: Dict[str, Any] = {}
+# Initialize database manager
+db = DatabaseManager()
+
+
+def determine_date_status(total_files: int, processed_files: int, failed_files: int) -> str:
+    """
+    Determine date processing status based on statistics.
+    
+    - ready: 처리된 파일 없음 (total_files == 0)
+    - done: 모든 파일 성공 (failed_files == 0 and processed_files == total_files)
+    - incomplete: 일부 파일 실패 (failed_files > 0 and processed_files > 0)
+    - failed: 모든 파일 실패 (processed_files == 0 and total_files > 0)
+    """
+    if total_files == 0:
+        return "ready"
+    
+    if failed_files == 0 and processed_files == total_files:
+        return "done"
+    
+    if failed_files > 0 and processed_files > 0:
+        return "incomplete"
+    
+    if processed_files == 0 and total_files > 0:
+        return "failed"
+    
+    return "incomplete"  # 기본값
 
 
 # ===== TEST ENDPOINT =====
@@ -35,6 +60,7 @@ async def process_batch_test():
     logger.info("🧪 테스트 배치 엔드포인트 호출됨")
     
     job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
     
     # Mock results 생성
     mock_results = [
@@ -53,35 +79,40 @@ async def process_batch_test():
                     "category": "설명의무"
                 }
             ]
-        },
-        {
-            "date": "20260314",
-            "filename": "20260314_002.txt",
-            "success": True,
-            "text": "테스트 텍스트 2",
-            "category": "상품설명",
-            "summary": "테스트 요약 2",
-            "omission_num": "2",
-            "detected_issues": [
-                {
-                    "step": "리스크 설명",
-                    "reason": "리스크가 충분히 설명되지 않음",
-                    "category": "설명의무"
-                }
-            ]
         }
     ]
     
-    # Job store 업데이트
-    JOB_STORE[job_id] = {
-        "status": "completed",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "results": mock_results,
-        "error": None,
-        "date_range": "20260314 to 20260316"
-    }
+    # Create job in database
+    job = BatchJob(
+        id=job_id,
+        status="completed",
+        start_date="20260314",
+        end_date="20260314",
+        created_at=now,
+        started_at=now,
+        completed_at=now,
+        total_files=1,
+        success_files=1,
+        failed_files=0
+    )
+    db.create_job(job)
+    
+    # Store results in database
+    for result_data in mock_results:
+        result = BatchResult(
+            job_id=job_id,
+            file_date=result_data["date"],
+            filename=result_data["filename"],
+            success=result_data["success"],
+            text_content=result_data.get("text"),
+            category=result_data.get("category"),
+            summary=result_data.get("summary"),
+            omission_num=int(result_data.get("omission_num", 0)),
+            detected_issues=result_data.get("detected_issues", []),
+            processing_time_ms=100,
+            created_at=now
+        )
+        db.create_result(result)
     
     logger.info("✅ 테스트 배치 완료: job_id=%s", job_id)
     return {
@@ -177,7 +208,7 @@ async def process_single(req: ProcessRequest):
 # ===== Batch Processing =====
 
 async def run_batch_async(job_id: str, req: BatchProcessRequest):
-    """Background task to execute batch processing and store results.
+    """Background task to execute batch processing and store results in database.
     
     For APP_ENV=local (Mock mode), this creates sample results quickly.
     """
@@ -186,8 +217,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
     def run_batch_sync():
         """동기 배치 처리 함수"""
         try:
-            JOB_STORE[job_id]["status"] = "running"
-            JOB_STORE[job_id]["started_at"] = datetime.now(timezone.utc).isoformat()
+            db.update_job_status(job_id, "running")
 
             results = []
             
@@ -196,15 +226,16 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                 logger.info("📌 Mock 모드: 샘플 결과 생성 중...")
                 
                 # 날짜 범위 내의 모든 날짜 생성
-                from datetime import timedelta
                 current = datetime.strptime(req.start_date, "%Y%m%d")
                 end = datetime.strptime(req.end_date, "%Y%m%d")
                 
                 mock_results = []
                 file_idx = 0
+                date_files = {}  # 날짜별 파일 수 추적
                 
                 while current <= end:
                     date_str = current.strftime("%Y%m%d")
+                    date_files[date_str] = {"total": 0, "success": 0, "failed": 0}
                     
                     # 각 날짜마다 3개의 파일 생성
                     for i in range(1, 4):
@@ -230,6 +261,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                             }
                         ]
                         
+                        now = datetime.now(timezone.utc)
                         result_item = {
                             "index": file_idx,
                             "date": date_str,
@@ -237,15 +269,46 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                             "success": True,
                             "text": f"고객과의 통화 기록\n시간: {date_str}\n상담사: 홍길동\n고객명: 김철수\n\n상담내용:\n- 상품 설명\n- 가격 안내\n- 특징 설명",
                             "category": "사후판매",
-                            "summary": f"[{filename}] 불완전판매요소 탐지 결과",
+                            "summary": f"[{filename}] STT 사후 점검",
                             "omission_num": str(len(mock_issues)),
                             "detected_issues": mock_issues,
-                            "processing_time_ms": 100
+                            "processing_time_ms": 100,
+                            "created_at": now
                         }
                         mock_results.append(result_item)
                         file_idx += 1
+                        date_files[date_str]["total"] += 1
+                        date_files[date_str]["success"] += 1
                     
                     current += timedelta(days=1)
+                
+                # DB에 결과 저장
+                for result_data in mock_results:
+                    result = BatchResult(
+                        job_id=job_id,
+                        file_date=result_data["date"],
+                        filename=result_data["filename"],
+                        success=result_data["success"],
+                        text_content=result_data.get("text"),
+                        category=result_data.get("category"),
+                        summary=result_data.get("summary"),
+                        omission_num=int(result_data.get("omission_num", 0)),
+                        detected_issues=result_data.get("detected_issues", []),
+                        processing_time_ms=result_data.get("processing_time_ms", 0),
+                        created_at=result_data.get("created_at", datetime.now(timezone.utc))
+                    )
+                    db.create_result(result)
+                
+                # 날짜별 상태 업데이트
+                for date_str, stats in date_files.items():
+                    status = determine_date_status(stats["total"], stats["success"], stats["failed"])
+                    db.update_date_status(
+                        date_str,
+                        total=stats["total"],
+                        processed=stats["success"],
+                        failed=stats["failed"],
+                        status=status
+                    )
                 
                 results = mock_results
                 logger.info("✅ Mock 배치 완료: 총 %d개 파일 처리", len(results))
@@ -254,16 +317,20 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                 logger.info("🔐 실제 배치 처리 모드 (구현 필요)")
                 pass
             
-            JOB_STORE[job_id]["results"] = results
-            JOB_STORE[job_id]["status"] = "completed"
-            JOB_STORE[job_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+            # 배치 작업 통계 업데이트
+            db.update_job_stats(
+                job_id,
+                total=len(results),
+                success=sum(1 for r in results if r.get("success")),
+                failed=sum(1 for r in results if not r.get("success"))
+            )
+            
+            db.update_job_status(job_id, "completed")
             logger.info("✅ 배치 처리 완료: job_id=%s, 결과 수=%d", job_id, len(results))
         
         except Exception as e:
             logger.exception("❌ 배치 처리 실패: %s", e)
-            JOB_STORE[job_id]["error"] = str(e)
-            JOB_STORE[job_id]["status"] = "failed"
-            JOB_STORE[job_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+            db.update_job_status(job_id, "failed", error_message=str(e))
     
     # ThreadPoolExecutor에서 동기 함수 실행
     loop = asyncio.get_event_loop()
@@ -295,22 +362,20 @@ async def process_batch_submit(req: BatchProcessRequest, background_tasks: Backg
     logger.info("📝 배치 제출 요청: start_date=%s, end_date=%s", req.start_date, req.end_date)
     
     job_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     
-    logger.info("🔄 Job store 초기화...")
-    JOB_STORE[job_id] = {
-        "status": "pending", 
-        "created_at": now, 
-        "results": None, 
-        "started_at": None, 
-        "completed_at": None,
-        "error": None,
-        "date_range": f"{req.start_date} to {req.end_date}"
-    }
-    logger.info("✅ Job store 초기화 완료: job_id=%s", job_id)
+    # Create job in database
+    job = BatchJob(
+        id=job_id,
+        status="pending",
+        start_date=req.start_date,
+        end_date=req.end_date,
+        created_at=now
+    )
+    db.create_job(job)
+    logger.info("✅ 배치 작업 생성: job_id=%s", job_id)
 
     # Schedule background task using FastAPI BackgroundTasks
-    logger.info("🔄 백그라운드 작업 스케줄링...")
     background_tasks.add_task(run_batch_async, job_id, req)
     logger.info("✅ 백그라운드 작업 스케줄링 완료")
 
@@ -326,17 +391,48 @@ async def process_batch_submit(req: BatchProcessRequest, background_tasks: Backg
 @router.get("/batch/status/{job_id}")
 async def process_batch_status(job_id: str):
     """Check the status of a batch job."""
-    if job_id not in JOB_STORE:
+    job = db.get_job(job_id)
+    if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    job = JOB_STORE[job_id]
+    # Get results if completed
+    results = None
+    if job.status == "completed":
+        db_results = db.get_results_by_job(job_id)
+        results = [r.to_dict() for r in db_results]
+
     return {
         "job_id": job_id,
-        "status": job["status"],
-        "created_at": job["created_at"],
-        "started_at": job.get("started_at"),
-        "completed_at": job.get("completed_at"),
-        "date_range": job.get("date_range"),
-        "error": job.get("error"),
-        "results": job.get("results") if job["status"] == "completed" else None,
+        "status": job.status,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "date_range": f"{job.start_date} to {job.end_date}",
+        "error": job.error_message,
+        "total_files": job.total_files,
+        "success_files": job.success_files,
+        "failed_files": job.failed_files,
+        "results": results
     }
+
+
+@router.get("/calendar/status/{year}/{month}")
+async def get_calendar_status(year: int, month: int):
+    """Get processing status for a calendar month (for UI calendar display).
+    
+    Status values:
+    - ready: 미처리
+    - done: 전체 성공
+    - incomplete: 일부 실패
+    - failed: 전체 실패
+    """
+    try:
+        month_status = db.get_month_status(year, month)
+        return {
+            "year": year,
+            "month": month,
+            "dates": month_status
+        }
+    except Exception as e:
+        logger.exception("Failed to get calendar status: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

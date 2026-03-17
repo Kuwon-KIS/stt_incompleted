@@ -64,7 +64,7 @@ class DateStatus:
     processed_files: int = 0
     failed_files: int = 0
     last_processed: Optional[datetime] = None
-    status: str = "unprocessed"  # 'unprocessed', 'partial', 'completed'
+    status: str = "ready"  # 'ready', 'incomplete', 'done', 'failed'
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 

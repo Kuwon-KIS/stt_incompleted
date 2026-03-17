@@ -89,7 +89,7 @@ class DatabaseManager:
                     processed_files INTEGER DEFAULT 0,
                     failed_files INTEGER DEFAULT 0,
                     last_processed TIMESTAMP,
-                    status TEXT DEFAULT 'unprocessed',
+                    status TEXT DEFAULT 'ready',
                     created_at TIMESTAMP NOT NULL,
                     updated_at TIMESTAMP NOT NULL
                 )

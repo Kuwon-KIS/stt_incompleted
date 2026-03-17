@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS batch_results (
 );
 
 -- Date processing status table
+-- Status values: 'ready' (준비), 'done' (완료), 'incomplete' (불완전), 'failed' (실패)
 CREATE TABLE IF NOT EXISTS date_status (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL UNIQUE,
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS date_status (
     processed_files INTEGER DEFAULT 0,
     failed_files INTEGER DEFAULT 0,
     last_processed TIMESTAMP,
-    status TEXT DEFAULT 'unprocessed',
+    status TEXT DEFAULT 'ready',
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
