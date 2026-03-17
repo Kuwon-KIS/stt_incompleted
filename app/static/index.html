@@ -120,13 +120,7 @@
                         <div class="card-title">📅 날짜 선택</div>
                         
                         <!-- Calendar -->
-                        <div id="batch-calendar" style="margin-bottom: 20px;"></div>
-                        
-                        <!-- Selected Range Display -->
-                        <div style="background-color: #f9fafb; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
-                            <p style="margin: 0 0 8px 0; font-size: 0.9em; color: #666;">선택된 범위:</p>
-                            <p id="selected-range" style="margin: 0; font-size: 1em; font-weight: 600; color: #1f2937;">선택해주세요</p>
-                        </div>
+                        <input type="text" id="batch-calendar" placeholder="날짜 범위 선택 (클릭)" style="margin-bottom: 20px; width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 1em;">
                         
                         <!-- Analyze Button -->
                         <button id="analyze-batch-btn" class="btn-primary" style="width: 100%; padding: 12px; font-size: 1em;">
@@ -162,52 +156,6 @@
                     </div>
                 </div>
             </section>
-                            </fieldset>
-
-                            <!-- Submit Buttons -->
-                            <div class="form-actions" style="grid-column: 1 / -1;">
-                                <button type="submit" class="btn btn-primary">처리 시작</button>
-                                <button type="reset" class="btn btn-secondary">초기화</button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <!-- Progress and Results -->
-                    <div class="card">
-                        <div class="card-title">처리 진행 상황</div>
-                        <div id="progress-container" class="progress-container" style="display: none;">
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="progress-fill"></div>
-                            </div>
-                            <div class="progress-text">
-                                <span id="progress-count">0 / 0</span>
-                                <span id="progress-status">대기 중...</span>
-                            </div>
-                        </div>
-                        
-                        <div id="results-container" class="results-container" style="display: none;">
-                            <div class="results-summary">
-                                <div>총 파일: <span id="result-total">0</span></div>
-                                <div>성공: <span id="result-success" class="success">0</span></div>
-                                <div>실패: <span id="result-error" class="error">0</span></div>
-                            </div>
-                            <table class="results-table" id="results-table">
-                                <thead>
-                                    <tr>
-                                        <th>날짜</th>
-                                        <th>파일명</th>
-                                        <th>상태</th>
-                                        <th>메시지</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                </tbody>
-                            </table>
-                            <button class="btn btn-secondary" id="download-results">결과 다운로드</button>
-                        </div>
-                    </div>
-                </div>
-            </section>
 
             <!-- Job History Page -->
             <section id="history" class="page">
@@ -228,10 +176,8 @@
                     </div>
 
                     <!-- Job List with Details -->
-                    <div class="card">
-                        <div id="jobs-list" class="jobs-list">
-                            <p class="empty-state">작업 이력이 없습니다</p>
-                        </div>
+                    <div id="jobs-list" class="jobs-list">
+                        <p class="empty-state">작업 이력이 없습니다</p>
                     </div>
                 </div>
             </section>
@@ -276,7 +222,7 @@
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" id="modal-close-btn-footer">닫기</button>
-                        <button class="btn btn-primary" id="download-results">파일별 결과 내보내기</button>
+                        <button class="btn btn-primary" id="modal-download-btn">파일별 결과 내보내기</button>
                     </div>
                 </div>
             </div>
