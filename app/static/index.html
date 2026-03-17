@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>STT 사후 점검 시스템</title>
+    <!-- Flatpickr Calendar Library -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -99,55 +102,66 @@
             <!-- Batch Processing Page -->
             <section id="batch" class="page">
                 <h2>⚙️ 배치 처리</h2>
+                
+                <!-- Date Range Info -->
+                <div class="card" style="background-color: #f0f4f8; border-left: 4px solid #2563eb;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <p style="margin: 0; font-size: 0.9em; color: #666;">📅 <strong>처리 가능 범위</strong></p>
+                            <p id="date-range-info" style="margin: 8px 0 0 0; font-size: 1.1em; font-weight: 600; color: #2563eb;">로딩 중...</p>
+                        </div>
+                        <button id="refresh-date-range" class="btn-secondary" style="padding: 8px 16px; font-size: 0.9em;">새로고침</button>
+                    </div>
+                </div>
+
                 <div class="batch-container">
-                    <!-- Configuration Form -->
+                    <!-- Calendar Section -->
                     <div class="card">
-                        <div class="card-title">처리 설정</div>
-                        <form id="batch-form" class="form-grid">
-                            <!-- Date Range -->
-                            <div class="form-group">
-                                <label>시작 날짜</label>
-                                <input type="date" id="start-date" required>
-                            </div>
-                            <div class="form-group">
-                                <label>종료 날짜</label>
-                                <input type="date" id="end-date" required>
-                            </div>
+                        <div class="card-title">📅 날짜 선택</div>
+                        
+                        <!-- Calendar -->
+                        <div id="batch-calendar" style="margin-bottom: 20px;"></div>
+                        
+                        <!-- Selected Range Display -->
+                        <div style="background-color: #f9fafb; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                            <p style="margin: 0 0 8px 0; font-size: 0.9em; color: #666;">선택된 범위:</p>
+                            <p id="selected-range" style="margin: 0; font-size: 1em; font-weight: 600; color: #1f2937;">선택해주세요</p>
+                        </div>
+                        
+                        <!-- Analyze Button -->
+                        <button id="analyze-batch-btn" class="btn-primary" style="width: 100%; padding: 12px; font-size: 1em;">
+                            📊 분석 및 옵션 확인
+                        </button>
+                    </div>
 
-                            <!-- Reprocess Options -->
-                            <fieldset class="form-group" style="grid-column: 1 / -1; border: 1px solid #ddd; padding: 12px; border-radius: 4px;">
-                                <legend style="padding: 0 8px; font-weight: 600; font-size: 0.95em;">재처리 옵션</legend>
-                                
-                                <div style="margin-bottom: 12px;">
-                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                        <input type="checkbox" id="force-reprocess" name="force-reprocess">
-                                        <span>기존 완료된 작업도 재처리</span>
-                                    </label>
-                                    <small style="color: #666; margin-left: 24px; display: block;">체크 시 정확히 동일한 날짜 범위가 있어도 새로 처리합니다</small>
-                                </div>
-
-                                <div>
-                                    <label style="display: block; margin-bottom: 8px;">겹치는 범위 처리 방식</label>
-                                    <div style="margin-left: 24px;">
-                                        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer;">
-                                            <input type="radio" name="handle-overlap" value="new" checked>
-                                            <span><strong>새로 처리</strong> (기본값)</span>
-                                        </label>
-                                        <small style="color: #666; margin-left: 24px; display: block; margin-bottom: 12px;">기존 작업과 겹치는 범위가 있어도 무시하고 새로 처리</small>
-                                        
-                                        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer;">
-                                            <input type="radio" name="handle-overlap" value="reprocess_all">
-                                            <span><strong>전체 재처리</strong></span>
-                                        </label>
-                                        <small style="color: #666; margin-left: 24px; display: block; margin-bottom: 12px;">겹치는 범위 포함하여 전체 범위를 다시 처리</small>
-                                        
-                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                            <input type="radio" name="handle-overlap" value="skip_overlap">
-                                            <span><strong>겹치는 부분 제외</strong></span>
-                                        </label>
-                                        <small style="color: #666; margin-left: 24px; display: block;">이미 처리된 부분은 제외하고 새로운 부분만 처리</small>
-                                    </div>
-                                </div>
+                    <!-- Analysis Result Section (Initially Hidden) -->
+                    <div id="analysis-result-container" style="display: none;">
+                        <div class="card" style="border-left: 4px solid #059669;">
+                            <div class="card-title">✨ 처리 방식 선택</div>
+                            
+                            <!-- Case Info -->
+                            <div id="case-info-box" style="background-color: #ecfdf5; padding: 12px; border-radius: 4px; margin-bottom: 16px; display: none;">
+                                <p id="case-description" style="margin: 0; font-size: 0.9em; line-height: 1.5;"></p>
+                            </div>
+                            
+                            <!-- Options -->
+                            <div id="options-container" style="display: flex; flex-direction: column; gap: 10px;">
+                                <!-- Options will be rendered here -->
+                            </div>
+                            
+                            <!-- Action Buttons -->
+                            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                                <button id="start-processing-btn" class="btn-primary" style="flex: 1;">
+                                    ▶️ 처리 시작
+                                </button>
+                                <button id="cancel-analysis-btn" class="btn-secondary" style="flex: 1;">
+                                    취소
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
                             </fieldset>
 
                             <!-- Submit Buttons -->

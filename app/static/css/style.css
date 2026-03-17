@@ -910,3 +910,184 @@ body {
     border-radius: 4px;
     font-size: 0.8rem;
 }
+
+/* ===== Phase 4: Calendar Batch UI ===== */
+
+.batch-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    max-width: 1200px;
+}
+
+@media (max-width: 900px) {
+    .batch-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Flatpickr 커스터마이징 */
+.flatpickr-calendar {
+    background: white;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    font-family: inherit;
+}
+
+.flatpickr-months .flatpickr-month {
+    background-color: #f3f4f6;
+    border-radius: 4px 4px 0 0;
+}
+
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+    color: #2563eb;
+}
+
+.flatpickr-day {
+    color: #1f2937;
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: white;
+}
+
+.flatpickr-day.inRange {
+    background: #bfdbfe;
+    color: #1e40af;
+}
+
+.flatpickr-day:hover {
+    background: #eff6ff;
+    border-color: #2563eb;
+}
+
+.flatpickr-day.disabled,
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+    color: #d1d5db;
+}
+
+/* 옵션 카드 */
+.option-card {
+    display: flex;
+    align-items: center;
+    border: 2px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background-color: #f9fafb;
+    margin-bottom: 8px;
+}
+
+.option-card:hover {
+    border-color: #2563eb;
+    background-color: #eff6ff;
+    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.1);
+}
+
+.option-card input[type="radio"] {
+    margin: 0;
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+.option-card label {
+    margin: 0 0 0 12px;
+    cursor: pointer;
+    flex: 1;
+}
+
+.option-card strong {
+    color: #1f2937;
+    font-size: 1em;
+}
+
+/* 날짜 배지 */
+.date-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: #2563eb;
+    color: white;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7em;
+    font-weight: bold;
+}
+
+/* 버튼 스타일 */
+.btn-primary {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.btn-primary:hover {
+    background: #1d4ed8;
+    box-shadow: 0 4px 6px rgba(37, 99, 235, 0.3);
+}
+
+.btn-primary:active {
+    transform: scale(0.98);
+}
+
+.btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+}
+
+.btn-secondary:active {
+    transform: scale(0.98);
+}
+
+/* Info Box */
+#case-info-box {
+    background-color: #ecfdf5;
+    border-left: 4px solid #059669;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+}
+
+#case-info-box p {
+    margin: 0;
+    color: #065f46;
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+/* Selected Range Display */
+#selected-range {
+    font-family: 'Courier New', monospace;
+    color: #2563eb;
+}

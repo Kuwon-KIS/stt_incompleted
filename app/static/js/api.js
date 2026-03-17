@@ -95,6 +95,47 @@ class API {
         });
     }
 
+    // ===== Phase 4: Calendar UI APIs =====
+
+    /**
+     * 처리 가능 날짜 범위 조회 (SFTP 또는 Mock)
+     * @returns {Object} {min_date, max_date, available_dates, source, test_mode}
+     */
+    async getDateRange() {
+        return this.get('/api/admin/date-range');
+    }
+
+    /**
+     * 날짜별 통계 조회 (처리 현황)
+     * @returns {Object} {dates: [{date, total_files, processed_files, ...}], ...}
+     */
+    async getDateStats() {
+        return this.get('/api/admin/date-stats');
+    }
+
+    /**
+     * 배치 케이스 분석 및 옵션 조회
+     * @param {Object} batchData
+     *   - start_date: 시작 날짜 (YYYYMMDD)
+     *   - end_date: 종료 날짜 (YYYYMMDD)
+     * @returns {Object} {case, user_range, completed_range, overlap_dates, new_dates, options}
+     */
+    async analyzeBatch(batchData) {
+        return this.post('/api/admin/batch-analysis', {
+            start_date: batchData.start_date,
+            end_date: batchData.end_date,
+        });
+    }
+
+    /**
+     * 배치 처리 시작 (옵션 선택 후)
+     * @param {Object} request
+     *   - start_date, end_date, option_id
+     */
+    async submitBatchWithOption(request) {
+        return this.post('/process/batch/submit', request);
+    }
+
     /**
      * 배치 결과 CSV 다운로드
      */

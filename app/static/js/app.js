@@ -39,7 +39,53 @@ class App {
             });
         });
 
-        // 배치 처리 폼
+        // ===== Phase 4: Calendar Batch UI =====
+        // 배치 페이지 진입 시 date-range 로드
+        const batchPage = document.getElementById('batch');
+        if (batchPage) {
+            const observer = new MutationObserver(() => {
+                if (batchPage.classList.contains('active')) {
+                    this.initializeBatchCalendar();
+                    observer.disconnect();
+                }
+            });
+            observer.observe(batchPage, { attributes: true, attributeFilter: ['class'] });
+        }
+
+        // 새로고침 버튼
+        const refreshBtn = document.getElementById('refresh-date-range');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.loadBatchDateRange();
+            });
+        }
+
+        // 분석 버튼
+        const analyzeBtn = document.getElementById('analyze-batch-btn');
+        if (analyzeBtn) {
+            analyzeBtn.addEventListener('click', () => {
+                this.analyzeBatchRange();
+            });
+        }
+
+        // 처리 시작 버튼
+        const startBtn = document.getElementById('start-processing-btn');
+        if (startBtn) {
+            startBtn.addEventListener('click', () => {
+                this.submitBatchWithOption();
+            });
+        }
+
+        // 취소 버튼
+        const cancelBtn = document.getElementById('cancel-analysis-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                this.resetBatchUI();
+            });
+        }
+
+        // ===== Legacy Batch Form =====
+        // 배치 처리 폼 (레거시)
         const batchForm = document.getElementById('batch-form');
         if (batchForm) {
             batchForm.addEventListener('submit', (e) => {
@@ -712,6 +758,399 @@ ${result.text || '텍스트 없음'}
         URL.revokeObjectURL(link.href);
     }
 
+    // ===== Phase 4: Calendar Batch UI =====
+
+    /**
+     * 배치 캘린더 UI 초기화
+     */
+    async initializeBatchCalendar() {
+        console.log('🔧 배치 캘린더 초기화...');
+        
+        // date-range 로드
+        await this.loadBatchDateRange();
+        
+        // date-stats 로드 (배지용)
+        await this.loadBatchDateStats();
+        
+        // 캘린더 초기화
+        this.initializeCalendar();
+    }
+
+    /**
+     * 처리 가능 날짜 범위 로드
+     */
+    async loadBatchDateRange() {
+        try {
+            const data = await api.getDateRange();
+            console.log('📅 Date range:', data);
+            
+            // 범위 정보 표시
+            const minDate = data.min_date ? this.formatDateForDisplay(data.min_date) : '미정';
+            const maxDate = data.max_date ? this.formatDateForDisplay(data.max_date) : '미정';
+            const rangeInfo = document.getElementById('date-range-info');
+            if (rangeInfo) {
+                rangeInfo.textContent = `${minDate} ~ ${maxDate}`;
+            }
+            
+            // 전역 변수로 저장 (캘린더 초기화에 사용)
+            window.batchDateRange = data;
+            
+            // TEST_MODE 안내
+            if (data.test_mode) {
+                console.log('⚠️ TEST_MODE 활성화 - Mock 날짜 사용');
+            }
+        } catch (error) {
+            console.error('❌ Date range 로드 실패:', error);
+            const rangeInfo = document.getElementById('date-range-info');
+            if (rangeInfo) {
+                rangeInfo.textContent = '범위 로드 실패';
+            }
+        }
+    }
+
+    /**
+     * 날짜별 통계 로드 (캘린더 배지용)
+     */
+    async loadBatchDateStats() {
+        try {
+            const data = await api.getDateStats();
+            console.log('📊 Date stats:', data);
+            
+            // 전역 변수로 저장
+            window.batchDateStats = data;
+        } catch (error) {
+            console.error('❌ Date stats 로드 실패:', error);
+        }
+    }
+
+    /**
+     * 캘린더 초기화 (flatpickr)
+     */
+    initializeCalendar() {
+        const calendarEl = document.getElementById('batch-calendar');
+        if (!calendarEl) return;
+        
+        // 이전 인스턴스 제거
+        if (calendarEl._flatpickr) {
+            calendarEl._flatpickr.destroy();
+        }
+        
+        // 선택 가능 날짜 설정
+        const availableDates = window.batchDateRange?.available_dates || [];
+        const disabledDates = this.getDisabledDates(availableDates);
+        
+        // 최소/최대 날짜 설정
+        const minDate = window.batchDateRange?.min_date ? this.convertDateFormat(window.batchDateRange.min_date, 'YYYYMMDD_to_Date') : null;
+        const maxDate = window.batchDateRange?.max_date ? this.convertDateFormat(window.batchDateRange.max_date, 'YYYYMMDD_to_Date') : null;
+        
+        // flatpickr 캘린더 생성
+        flatpickr(calendarEl, {
+            mode: 'range',
+            dateFormat: 'Y-m-d',
+            minDate: minDate,
+            maxDate: maxDate,
+            disable: disabledDates,
+            locale: 'ko',
+            onChange: (selectedDates) => {
+                this.onCalendarDateChange(selectedDates);
+            },
+            onReady: (selectedDates, dateStr, instance) => {
+                // 캘린더 렌더링 후 배지 추가
+                this.addDateBadges();
+            }
+        });
+    }
+
+    /**
+     * 비활성 날짜 목록 생성 (선택 불가능)
+     */
+    getDisabledDates(availableDates) {
+        // availableDates는 ['YYYYMMDD', ...] 형식
+        // flatpickr disable은 선택 불가능한 날짜들을 array로 받음
+        
+        // 모든 날짜를 일단 비활성화
+        const allDisabled = [];
+        
+        // 처리 가능한 날짜만 활성화
+        for (const dateStr of availableDates) {
+            const date = this.convertDateFormat(dateStr, 'YYYYMMDD_to_Date');
+            allDisabled.push({ from: date, to: date, disabled: false });
+        }
+        
+        return allDisabled;
+    }
+
+    /**
+     * 캘린더 날짜 변경 이벤트
+     */
+    onCalendarDateChange(selectedDates) {
+        console.log('📅 Selected dates:', selectedDates);
+        
+        if (selectedDates.length === 2) {
+            const startDate = selectedDates[0];
+            const endDate = selectedDates[1];
+            
+            const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+            const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+            
+            // 선택된 범위 표시
+            const selectedRangeEl = document.getElementById('selected-range');
+            if (selectedRangeEl) {
+                selectedRangeEl.textContent = `${startStr} ~ ${endStr}`;
+            }
+            
+            // 전역 변수 저장
+            window.selectedDateRange = {
+                start: startStr,
+                end: endStr,
+                startDate: startDate,
+                endDate: endDate
+            };
+        }
+    }
+
+    /**
+     * 날짜별 배지 추가 (파일 개수 표시)
+     */
+    addDateBadges() {
+        const stats = window.batchDateStats?.dates || [];
+        
+        stats.forEach(stat => {
+            const dateStr = stat.date; // YYYYMMDD
+            const date = this.convertDateFormat(dateStr, 'YYYYMMDD_to_Date');
+            
+            // 캘린더에서 해당 날짜 요소 찾기
+            const dayElement = document.querySelector(`[aria-label="${this.formatDateForDisplay(dateStr)}"]`);
+            if (dayElement && stat.total_files > 0) {
+                // 배지 추가
+                const badge = document.createElement('span');
+                badge.className = 'date-badge';
+                badge.textContent = stat.total_files;
+                badge.style.cssText = 'position: absolute; top: 2px; right: 2px; background: #2563eb; color: white; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 0.7em; font-weight: bold;';
+                dayElement.style.position = 'relative';
+                dayElement.appendChild(badge);
+            }
+        });
+    }
+
+    /**
+     * 배치 범위 분석
+     */
+    async analyzeBatchRange() {
+        const selectedRange = window.selectedDateRange;
+        if (!selectedRange) {
+            alert('먼저 날짜 범위를 선택해주세요');
+            return;
+        }
+        
+        console.log('🔍 배치 분석 시작...');
+        
+        try {
+            // API 호출
+            const response = await api.analyzeBatch({
+                start_date: selectedRange.start.replace(/-/g, ''),
+                end_date: selectedRange.end.replace(/-/g, '')
+            });
+            
+            console.log('✨ 분석 결과:', response);
+            
+            // 전역 변수 저장
+            window.batchAnalysisResult = response;
+            
+            // 결과 표시
+            this.displayAnalysisResult(response);
+        } catch (error) {
+            console.error('❌ 분석 실패:', error);
+            alert('배치 분석 실패: ' + error.message);
+        }
+    }
+
+    /**
+     * 분석 결과 표시
+     */
+    displayAnalysisResult(result) {
+        const resultContainer = document.getElementById('analysis-result-container');
+        const optionsContainer = document.getElementById('options-container');
+        const caseInfoBox = document.getElementById('case-info-box');
+        const caseDescription = document.getElementById('case-description');
+        
+        if (!resultContainer || !optionsContainer) return;
+        
+        // 케이스 정보 표시
+        const caseText = {
+            'full_overlap': '✅ 모든 날짜가 이미 처리되었습니다',
+            'partial_overlap': '⚠️ 일부 날짜는 처리되었고, 일부는 새로운 데이터입니다',
+            'no_overlap': '🆕 모든 날짜가 새로운 데이터입니다',
+            'no_data': '❌ 선택한 범위에 처리할 데이터가 없습니다'
+        };
+        
+        if (caseDescription) {
+            caseDescription.textContent = caseText[result.case] || '분류 불가';
+        }
+        
+        if (caseInfoBox && result.case !== 'no_data') {
+            caseInfoBox.style.display = 'block';
+        }
+        
+        // 옵션 표시
+        optionsContainer.innerHTML = '';
+        
+        if (result.options && result.options.length > 0) {
+            result.options.forEach((option, index) => {
+                const optionCard = document.createElement('div');
+                optionCard.className = 'option-card';
+                optionCard.style.cssText = `
+                    border: 2px solid #e5e7eb;
+                    border-radius: 6px;
+                    padding: 12px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    background-color: #f9fafb;
+                `;
+                optionCard.innerHTML = `
+                    <input type="radio" name="batch-option" value="${option.id}" id="option-${option.id}" style="margin-right: 10px;">
+                    <label for="option-${option.id}" style="cursor: pointer; flex: 1;">
+                        <strong>${option.label}</strong>
+                        <p style="margin: 4px 0 0 0; font-size: 0.9em; color: #666;">${option.description}</p>
+                    </label>
+                `;
+                
+                // 호버 효과
+                optionCard.addEventListener('mouseenter', () => {
+                    optionCard.style.borderColor = '#2563eb';
+                    optionCard.style.backgroundColor = '#eff6ff';
+                });
+                optionCard.addEventListener('mouseleave', () => {
+                    optionCard.style.borderColor = '#e5e7eb';
+                    optionCard.style.backgroundColor = '#f9fafb';
+                });
+                
+                // 클릭 시 라디오 선택
+                optionCard.addEventListener('click', () => {
+                    document.getElementById(`option-${option.id}`).checked = true;
+                });
+                
+                optionsContainer.appendChild(optionCard);
+                
+                // 첫 번째 옵션 기본 선택
+                if (index === 0) {
+                    document.getElementById(`option-${option.id}`).checked = true;
+                }
+            });
+        } else {
+            optionsContainer.innerHTML = '<p style="text-align: center; color: #666;">선택 가능한 옵션이 없습니다</p>';
+        }
+        
+        // 결과 컨테이너 표시
+        resultContainer.style.display = 'block';
+    }
+
+    /**
+     * 선택한 옵션으로 배치 처리 시작
+     */
+    async submitBatchWithOption() {
+        const selectedOption = document.querySelector('input[name="batch-option"]:checked');
+        if (!selectedOption) {
+            alert('처리 방식을 선택해주세요');
+            return;
+        }
+        
+        const selectedRange = window.selectedDateRange;
+        if (!selectedRange) {
+            alert('날짜 범위를 선택해주세요');
+            return;
+        }
+        
+        console.log('▶️ 배치 처리 시작...');
+        
+        try {
+            // API 요청 구성
+            const request = {
+                start_date: selectedRange.start.replace(/-/g, ''),
+                end_date: selectedRange.end.replace(/-/g, ''),
+                option_id: selectedOption.value
+            };
+            
+            console.log('📨 Request:', request);
+            
+            // API 호출
+            const response = await api.submitBatchWithOption(request);
+            
+            console.log('✅ 처리 시작:', response);
+            
+            // 성공 메시지
+            alert(`배치 처리가 시작되었습니다!\n작업 ID: ${response.job_id}`);
+            
+            // UI 초기화
+            this.resetBatchUI();
+            
+            // 이력 페이지로 이동
+            setTimeout(() => {
+                this.switchPage('history');
+            }, 1000);
+        } catch (error) {
+            console.error('❌ 처리 실패:', error);
+            alert('배치 처리 실패: ' + error.message);
+        }
+    }
+
+    /**
+     * 배치 UI 초기화
+     */
+    resetBatchUI() {
+        // 캘린더 선택 제거
+        const calendarEl = document.getElementById('batch-calendar');
+        if (calendarEl && calendarEl._flatpickr) {
+            calendarEl._flatpickr.clear();
+        }
+        
+        // 선택된 범위 텍스트 초기화
+        const selectedRangeEl = document.getElementById('selected-range');
+        if (selectedRangeEl) {
+            selectedRangeEl.textContent = '선택해주세요';
+        }
+        
+        // 분석 결과 컨테이너 숨김
+        const resultContainer = document.getElementById('analysis-result-container');
+        if (resultContainer) {
+            resultContainer.style.display = 'none';
+        }
+        
+        // 전역 변수 초기화
+        window.selectedDateRange = null;
+        window.batchAnalysisResult = null;
+    }
+
+    /**
+     * 날짜 포맷 변환 헬퍼
+     */
+    convertDateFormat(dateStr, format) {
+        if (format === 'YYYYMMDD_to_Date') {
+            // YYYYMMDD → Date
+            const year = parseInt(dateStr.substring(0, 4));
+            const month = parseInt(dateStr.substring(4, 6)) - 1;
+            const day = parseInt(dateStr.substring(6, 8));
+            return new Date(year, month, day);
+        } else if (format === 'Date_to_YYYYMMDD') {
+            // Date → YYYYMMDD
+            const year = dateStr.getFullYear();
+            const month = String(dateStr.getMonth() + 1).padStart(2, '0');
+            const day = String(dateStr.getDate()).padStart(2, '0');
+            return `${year}${month}${day}`;
+        }
+        return dateStr;
+    }
+
+    /**
+     * 날짜 표시 포맷 (YYYY-MM-DD)
+     */
+    formatDateForDisplay(dateStr) {
+        // YYYYMMDD → YYYY-MM-DD
+        if (typeof dateStr === 'string' && dateStr.length === 8) {
+            return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+        }
+        return dateStr;
+    }
     // ===== Utilities =====
 
     formatUptime(seconds) {
