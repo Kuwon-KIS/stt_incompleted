@@ -48,6 +48,19 @@ class App {
             });
         }
 
+        // 결과 다운로드 버튼
+        const downloadBtn = document.getElementById('download-results');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (window.currentJob && window.currentJob.job_id) {
+                    api.downloadBatchResults(window.currentJob.job_id);
+                } else {
+                    alert('다운로드할 작업이 없습니다');
+                }
+            });
+        }
+
         // 검색 및 필터
         const searchInput = document.getElementById('search-input');
         if (searchInput) {
@@ -165,6 +178,67 @@ class App {
                 statusText.textContent = '정상';
             }
         }
+
+        // Load date statistics
+        this.loadDateStatistics();
+    }
+
+    async loadDateStatistics() {
+        try {
+            const response = await api.getDateStatistics();
+            
+            // Update summary stats
+            if (response.total_files !== undefined) {
+                document.getElementById('total-files').textContent = response.total_files;
+                document.getElementById('success-count').textContent = response.total_success;
+                document.getElementById('error-count').textContent = response.total_failed;
+            }
+
+            // Update date-wise table
+            const tbody = document.getElementById('date-stats-tbody');
+            if (!tbody) return;
+
+            if (!response.dates || response.dates.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #999;">처리된 날짜가 없습니다</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = response.dates.map(stat => {
+                const date = stat.date;
+                const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
+                const statusBadge = this.getStatusBadge(stat.status);
+                const lastProcessed = stat.last_processed 
+                    ? new Date(stat.last_processed).toLocaleString('ko-KR')
+                    : '-';
+
+                return `
+                    <tr>
+                        <td>${formattedDate}</td>
+                        <td>${stat.total_files}</td>
+                        <td class="success">${stat.success_files}</td>
+                        <td class="error">${stat.failed_files}</td>
+                        <td>${statusBadge}</td>
+                        <td style="font-size: 0.9em;">${lastProcessed}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('날짜별 통계 로드 실패:', error);
+            const tbody = document.getElementById('date-stats-tbody');
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #c00;">통계 로드 실패</td></tr>';
+            }
+        }
+    }
+
+    getStatusBadge(status) {
+        const badges = {
+            'ready': '<span style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px; font-size: 0.85em;">미처리</span>',
+            'done': '<span style="background: #10b981; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.85em;">완료</span>',
+            'incomplete': '<span style="background: #f59e0b; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.85em;">일부 실패</span>',
+            'failed': '<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.85em;">실패</span>'
+        };
+        return badges[status] || `<span>${status}</span>`;
     }
 
     // ===== Batch Processing =====

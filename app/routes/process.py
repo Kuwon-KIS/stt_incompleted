@@ -8,10 +8,13 @@ import time
 import os
 import uuid
 import threading
+import csv
+import io
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import Dict, Any
 
 from ..config import config
@@ -710,7 +713,13 @@ async def process_batch_status(job_id: str):
 
 @router.get("/calendar/status/{year}/{month}")
 async def get_calendar_status(year: int, month: int):
-    """Get processing status for a calendar month (for UI calendar display).
+    """Get processing status for a calendar month (UI calendar display format).
+    
+    This endpoint converts unified date statistics into calendar format.
+    Both this endpoint and /api/admin/date-stats use the same underlying data.
+    
+    - This endpoint returns: Dict format (date -> stats) - optimized for calendar grid UI
+    - /api/admin/date-stats returns: Array format - optimized for dashboard table UI
     
     Status values:
     - ready: 미처리
@@ -727,4 +736,60 @@ async def get_calendar_status(year: int, month: int):
         }
     except Exception as e:
         logger.exception("Failed to get calendar status: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/batch/results/{job_id}/download")
+async def download_batch_results(job_id: str):
+    """Download batch processing results as CSV.
+    
+    Returns a CSV file with all results for the specified job.
+    Columns: date, filename, status, category, omission_num, summary, error_message
+    """
+    try:
+        # Get job
+        job = db.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+        
+        # Get results
+        results = db.get_results_by_job(job_id)
+        
+        # Generate CSV content
+        output = io.StringIO()
+        fieldnames = [
+            'date', 'filename', 'status', 'category', 'omission_num', 
+            'summary', 'detected_issues', 'error_message'
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for result in results:
+            writer.writerow({
+                'date': result.file_date,
+                'filename': result.filename,
+                'status': 'success' if result.success else 'failed',
+                'category': result.category or '-',
+                'omission_num': result.omission_num or '-',
+                'summary': result.summary or '-',
+                'detected_issues': str(result.detected_issues) if result.detected_issues else '-',
+                'error_message': result.error_message or '-'
+            })
+        
+        # Prepare streaming response
+        csv_content = output.getvalue()
+        output.close()
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"batch_results_{job_id[:8]}_{timestamp}.csv"
+        
+        return StreamingResponse(
+            iter([csv_content.encode('utf-8-sig')]),  # BOM for Excel compatibility
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to download results: %s", e)
         raise HTTPException(status_code=500, detail=str(e))

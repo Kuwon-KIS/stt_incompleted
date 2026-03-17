@@ -95,6 +95,33 @@ class API {
         });
     }
 
+    /**
+     * 배치 결과 CSV 다운로드
+     */
+    async downloadBatchResults(jobId) {
+        const url = `${this.baseUrl}/process/batch/results/${jobId}/download`;
+        window.location.href = url;
+    }
+
+    // ===== Date Statistics =====
+
+    /**
+     * 날짜별 통계 조회 (대시보드용)
+     */
+    async getDateStatistics(startDate = null, endDate = null) {
+        let url = '/api/admin/date-stats';
+        const params = [];
+        
+        if (startDate) params.push(`start_date=${startDate}`);
+        if (endDate) params.push(`end_date=${endDate}`);
+        
+        if (params.length > 0) {
+            url += '?' + params.join('&');
+        }
+        
+        return this.get(url);
+    }
+
     // ===== Templates =====
 
     /**

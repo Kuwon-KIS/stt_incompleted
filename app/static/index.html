@@ -69,6 +69,30 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Date-wise Metadata -->
+                    <div class="card" style="grid-column: 1 / -1;">
+                        <div class="card-title">날짜별 처리 현황</div>
+                        <div id="date-stats-container" style="overflow-x: auto;">
+                            <table id="date-stats-table" class="results-table" style="width: 100%; margin-top: 10px;">
+                                <thead>
+                                    <tr>
+                                        <th>날짜</th>
+                                        <th>총 파일</th>
+                                        <th>성공</th>
+                                        <th>실패</th>
+                                        <th>상태</th>
+                                        <th>마지막 처리</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="date-stats-tbody">
+                                    <tr>
+                                        <td colspan="6" style="text-align: center; color: #999;">데이터 로딩 중...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </section>
 

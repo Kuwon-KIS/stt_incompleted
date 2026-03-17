@@ -405,8 +405,70 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def get_date_statistics(self, start_date: Optional[str] = None, 
+                             end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get date-wise statistics - unified source for all date-based queries.
+        
+        This is the single source of truth for date statistics across the system.
+        Both calendar and dashboard UIs use this method (converted to different formats as needed).
+        
+        Args:
+            start_date: Filter start date (YYYYMMDD format), optional
+            end_date: Filter end date (YYYYMMDD format), optional
+            
+        Returns:
+            List of dictionaries with date statistics:
+            [{
+                'date': 'YYYYMMDD',
+                'total_files': int,
+                'processed_files': int (successfully processed files),
+                'failed_files': int,
+                'status': str ('ready', 'done', 'incomplete', 'failed'),
+                'last_processed': timestamp
+            }, ...]
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            if start_date and end_date:
+                cursor.execute("""
+                    SELECT * FROM date_status 
+                    WHERE date >= ? AND date <= ?
+                    ORDER BY date DESC
+                """, (start_date, end_date))
+            else:
+                cursor.execute("SELECT * FROM date_status ORDER BY date DESC")
+            
+            rows = cursor.fetchall()
+            result = []
+            
+            for row in rows:
+                result.append({
+                    'date': row['date'],
+                    'total_files': row['total_files'],
+                    'processed_files': row['processed_files'],  # Successfully processed count
+                    'failed_files': row['failed_files'],
+                    'status': row['status'],
+                    'last_processed': row['last_processed']
+                })
+            
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get date statistics: {e}")
+            raise
+        finally:
+            conn.close()
+
     def get_month_status(self, year: int, month: int) -> Dict[str, Dict[str, Any]]:
-        """Get calendar status for a month."""
+        """Get calendar status for a month (uses get_date_statistics internally).
+        
+        Converts the unified date statistics into calendar format.
+        Kept for backward compatibility with calendar UI.
+        
+        Returns:
+            Dict mapping date -> {status, total, processed, failed}
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -422,7 +484,7 @@ class DatabaseManager:
                 result[row['date']] = {
                     'status': row['status'],
                     'total': row['total_files'],
-                    'processed': row['processed_files'],
+                    'processed': row['processed_files'],  # Consistency: maps to 'processed'
                     'failed': row['failed_files']
                 }
             return result
@@ -431,6 +493,7 @@ class DatabaseManager:
             raise
         finally:
             conn.close()
+
 
     def get_db_status(self) -> Dict[str, Any]:
         """Get database status."""
