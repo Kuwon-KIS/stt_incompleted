@@ -214,12 +214,32 @@ async def process_single(req: ProcessRequest):
 # ===== Batch Processing =====
 
 def run_batch_sync(job_id: str, req: BatchProcessRequest):
-    """Synchronous batch processing function that can be called from thread."""
+    """Synchronous batch processing function that can be called from thread.
+    
+    Supports SELECT_TARGET case-based options:
+    - option_id='reprocess': Force reprocess (force=true)
+    - option_id='view_history': View history (no processing)
+    - option_id='process_new': Process new dates only
+    - option_id='reprocess_all': Reprocess all dates in range
+    """
     logger.info("=" * 80)
-    logger.info("[BATCH_START] job_id=%s, date_range=%s~%s, thread_id=%s", 
-                job_id, req.start_date, req.end_date, threading.current_thread().ident)
+    logger.info("[BATCH_START] job_id=%s, date_range=%s~%s, option_id=%s, thread_id=%s", 
+                job_id, req.start_date, req.end_date, req.option_id, threading.current_thread().ident)
     
     try:
+        # Step 1: Handle option_id for SELECT_TARGET feature
+        if req.option_id == "view_history":
+            logger.info("[BATCH_OPTION] option_id='view_history': returning without processing")
+            db.update_job_status(job_id, "completed")
+            logger.info("[BATCH_SUCCESS] Job completed (view_history mode)")
+            logger.info("=" * 80)
+            return
+        
+        # Step 2: Adjust force_reprocess based on option_id
+        if req.option_id == "reprocess" or req.option_id == "reprocess_all":
+            req.force_reprocess = True
+            logger.info("[BATCH_OPTION] option_id='%s': setting force_reprocess=true", req.option_id)
+        
         logger.info("[BATCH_STATUS_UPDATE] Updating status to 'running'")
         db.update_job_status(job_id, "running")
         logger.info("[BATCH_STATUS_OK] Status updated successfully")
@@ -556,13 +576,30 @@ async def process_batch(req: BatchProcessRequest):
 async def process_batch_submit(req: BatchProcessRequest):
     """Submit a batch job with conflict detection and handling options.
     
+    Supports SELECT_TARGET case-based options:
+    - option_id='reprocess': Force reprocess completed range
+    - option_id='view_history': View existing results (no reprocessing)
+    - option_id='process_new': Process only new/unprocessed dates
+    - option_id='reprocess_all': Reprocess entire range (even partial overlap)
+    
     3가지 케이스 처리:
     1. 전체 겹침 (정확히 동일한 범위): force_reprocess=False면 기존 반환, True면 재처리
     2. 부분 겹침: handle_overlap로 처리 방식 결정 ("new"/"reprocess_all"/"skip_overlap")
     3. 안 겹침: 새 작업 생성
     """
-    logger.info("[BATCH_SUBMIT] Received: start=%s, end=%s, force_reprocess=%s, handle_overlap=%s",
-               req.start_date, req.end_date, req.force_reprocess, req.handle_overlap)
+    logger.info("[BATCH_SUBMIT] Received: start=%s, end=%s, force_reprocess=%s, handle_overlap=%s, option_id=%s",
+               req.start_date, req.end_date, req.force_reprocess, req.handle_overlap, req.option_id)
+    
+    # Validate option_id if provided
+    if req.option_id:
+        valid_options = {"reprocess", "view_history", "process_new", "reprocess_all"}
+        if req.option_id not in valid_options:
+            logger.error("[BATCH_INVALID_OPTION] Invalid option_id: %s", req.option_id)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid option_id: {req.option_id}. Valid options: {valid_options}"
+            )
+        logger.info("[BATCH_OPTION] Using option_id: %s", req.option_id)
     
     # 1. 겹치는 기존 작업 조회
     existing_jobs = db.get_jobs_by_date_range(req.start_date, req.end_date)
