@@ -30,9 +30,6 @@ scripts/test/
 
 # 원격 서버에서 테스트
 ./scripts/test/integration-test.sh 192.168.1.100 8080
-
-# HTTPS 지원
-API_PROTOCOL=https API_HOST=api.example.com API_PORT=443 ./scripts/test/integration-test.sh
 ```
 
 ### 2. Docker 환경에서 자동화 테스트 (배포 후)
@@ -90,7 +87,6 @@ pytest scripts/test/test_routes.py -v
 # 환경 변수로 지정
 API_HOST=192.168.1.100 \
 API_PORT=8000 \
-API_PROTOCOL=https \
 TEST_DATE_START=20260320 \
 TEST_DATE_END=20260322 \
 TIMEOUT=20 \
@@ -100,7 +96,6 @@ TIMEOUT=20 \
 **환경 변수**:
 - `API_HOST`: 서버 호스트 (기본값: localhost)
 - `API_PORT`: 서버 포트 (기본값: 8002)
-- `API_PROTOCOL`: HTTP/HTTPS (기본값: http)
 - `TEST_DATE_START`: 배치 시작 날짜 YYYYMMDD (기본값: 20260328)
 - `TEST_DATE_END`: 배치 종료 날짜 YYYYMMDD (기본값: 20260329)
 - `TIMEOUT`: 배치 완료 대기 시간 초 (기본값: 15)

@@ -290,7 +290,6 @@ run_integration_tests() {
     # API_HOST와 API_PORT를 override하여 테스트 스크립트 실행
     export API_HOST="localhost"
     export API_PORT="$API_PORT"
-    export API_PROTOCOL="http"
 
     log_info "테스트 대상: http://localhost:${API_PORT}"
 

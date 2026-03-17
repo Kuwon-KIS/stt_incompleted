@@ -16,7 +16,6 @@
 # 환경 변수:
 #   API_HOST: API 서버 호스트 (기본값: localhost)
 #   API_PORT: API 포트 (기본값: 8002)
-#   API_PROTOCOL: HTTP/HTTPS (기본값: http)
 #   TEST_DATE_START: 배치 시작 날짜 (기본값: 20260328)
 #   TEST_DATE_END: 배치 종료 날짜 (기본값: 20260329)
 #   TIMEOUT: 작업 완료 대기 시간 초 (기본값: 15)
@@ -32,13 +31,12 @@ set -euo pipefail
 # 기본값
 API_HOST="${API_HOST:-${1:-localhost}}"
 API_PORT="${API_PORT:-${2:-8002}}"
-API_PROTOCOL="${API_PROTOCOL:-http}"
 TEST_DATE_START="${TEST_DATE_START:-20260328}"
 TEST_DATE_END="${TEST_DATE_END:-20260329}"
 TIMEOUT="${TIMEOUT:-15}"
 
-# 구성된 URL
-API_BASE_URL="${API_PROTOCOL}://${API_HOST}:${API_PORT}"
+# 구성된 URL (HTTP 고정)
+API_BASE_URL="http://${API_HOST}:${API_PORT}"
 
 # 색상
 RED='\033[0;31m'
