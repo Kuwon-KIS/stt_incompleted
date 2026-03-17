@@ -46,6 +46,7 @@ class Config:
     # Application settings
     APP_ENV = os.getenv("APP_ENV", "dev")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"  # Mock fallback for SFTP errors
     
     # SFTP settings
     SFTP_HOST = os.getenv("SFTP_HOST")

@@ -65,6 +65,18 @@ class MockSFTPClient:
             return self.mock_dates
         return []
     
+    def get_available_dates(self, root_path: str = "/") -> List[str]:
+        """Get list of available dates (YYYYMMDD format) from mock data.
+        
+        Args:
+            root_path: Root path to search (ignored for mock, always uses mock_dates)
+            
+        Returns:
+            Sorted list of dates in YYYYMMDD format
+        """
+        logger.info(f"MockSFTPClient.get_available_dates: returning {len(self.mock_dates)} mock dates")
+        return sorted(self.mock_dates)
+    
     def read_file(self, path: str) -> str:
         """Mock read_file - returns dummy content for testing."""
         logger.debug("MockSFTPClient.read_file path=%s", path)
@@ -220,6 +232,57 @@ class SFTPClient:
         except FileNotFoundError:
             logger.warning("Directory not found: %s", path)
             return []
+
+    def get_available_dates(self, root_path: str = "/") -> List[str]:
+        """Get list of available dates (YYYYMMDD format) from SFTP root directory.
+        
+        Scans the root directory and returns only entries that match YYYYMMDD format.
+        
+        Args:
+            root_path: Root path to search (default: "/")
+            
+        Returns:
+            Sorted list of dates in YYYYMMDD format
+            
+        Raises:
+            RuntimeError: If SFTP connection not established
+            Exception: If directory listing fails
+        """
+        if not self.sftp:
+            raise RuntimeError("SFTP connection not established")
+        
+        logger.info(f"Scanning SFTP {root_path} for available dates")
+        try:
+            entries = self.list_directories(root_path)
+            dates = []
+            
+            for entry in entries:
+                if self._is_valid_date_format(entry):
+                    dates.append(entry)
+            
+            dates = sorted(dates)
+            logger.info(f"Found {len(dates)} available dates in SFTP: {dates}")
+            return dates
+        
+        except Exception as e:
+            logger.error(f"Failed to get available dates from SFTP {root_path}: {e}")
+            raise
+    
+    @staticmethod
+    def _is_valid_date_format(value: str) -> bool:
+        """Check if value is valid YYYYMMDD format date.
+        
+        Args:
+            value: String to validate
+            
+        Returns:
+            True if value matches YYYYMMDD format and represents valid date
+        """
+        try:
+            datetime.strptime(value, "%Y%m%d")
+            return True
+        except (ValueError, TypeError):
+            return False
 
     def close(self):
         try:

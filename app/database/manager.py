@@ -460,6 +460,49 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def get_completed_date_range(self, start_date: Optional[str] = None, 
+                                  end_date: Optional[str] = None) -> List[str]:
+        """Get list of completed dates (status='done') within optional range.
+        
+        A date is considered 'completed' when all files in that date have been
+        successfully processed (status='done' in date_status table).
+        
+        Args:
+            start_date: Filter start date (YYYYMMDD format), optional
+            end_date: Filter end date (YYYYMMDD format), optional
+            
+        Returns:
+            Sorted list of dates (YYYYMMDD format) with status='done'
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            if start_date and end_date:
+                cursor.execute("""
+                    SELECT date FROM date_status 
+                    WHERE status = 'done' AND date >= ? AND date <= ?
+                    ORDER BY date
+                """, (start_date, end_date))
+            else:
+                cursor.execute("""
+                    SELECT date FROM date_status 
+                    WHERE status = 'done'
+                    ORDER BY date
+                """)
+            
+            rows = cursor.fetchall()
+            completed_dates = [row['date'] for row in rows]
+            
+            logger.debug(f"Found {len(completed_dates)} completed dates in range [{start_date}, {end_date}]")
+            return completed_dates
+        
+        except Exception as e:
+            logger.error(f"Failed to get completed date range: {e}")
+            raise
+        finally:
+            conn.close()
+
     def get_month_status(self, year: int, month: int) -> Dict[str, Dict[str, Any]]:
         """Get calendar status for a month (uses get_date_statistics internally).
         
