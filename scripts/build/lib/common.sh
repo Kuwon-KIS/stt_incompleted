@@ -31,6 +31,7 @@ log_success() {
 
 log_error() {
     echo -e "${RED}❌ Error: $1${NC}"
+    exit 1
 }
 
 log_info() {

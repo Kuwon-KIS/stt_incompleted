@@ -183,7 +183,7 @@ fi
 
 # Display image info
 echo ""
-docker images | grep "$IMAGE_NAME" | grep "$ENV"
+docker images | grep "$IMAGE_NAME" | grep "$ENV" || true
 
 # Step 5: Export image as tar.gz
 log_step "5" "Export image as compressed tar.gz"
@@ -198,10 +198,18 @@ log_info "Filename: $TAR_FILENAME"
 if command -v pigz &> /dev/null; then
     CORES=$(nproc)
     log_info "Using pigz for parallel compression (cores: $CORES)"
-    docker save "$FULL_IMAGE" | pigz -6 -p $CORES > "$TAR_FILEPATH" 2>&1 | tee -a "$BUILD_LOG"
+    if docker save "$FULL_IMAGE" 2>&1 | tee -a "$BUILD_LOG" | pigz -6 -p $CORES > "$TAR_FILEPATH" 2>&1; then
+        :
+    else
+        log_error "Failed to compress image with pigz"
+    fi
 else
     log_info "Using gzip for compression (pigz not available)"
-    docker save "$FULL_IMAGE" | gzip -6 > "$TAR_FILEPATH" 2>&1 | tee -a "$BUILD_LOG"
+    if docker save "$FULL_IMAGE" 2>&1 | tee -a "$BUILD_LOG" | gzip -6 > "$TAR_FILEPATH" 2>&1; then
+        :
+    else
+        log_error "Failed to compress image with gzip"
+    fi
 fi
 
 if [ -f "$TAR_FILEPATH" ]; then
@@ -209,7 +217,7 @@ if [ -f "$TAR_FILEPATH" ]; then
     log_success "Image exported (size: $TAR_SIZE)"
     log_info "File: $TAR_FILEPATH"
 else
-    log_error "Failed to export image"
+    log_error "Failed to export image: file not created at $TAR_FILEPATH"
 fi
 
 # Step 6: Save build metadata
