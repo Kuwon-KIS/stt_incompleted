@@ -32,8 +32,8 @@ class DatabaseManager:
         logger.info(f"Database directory ready: {db_dir}")
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get SQLite connection."""
-        conn = sqlite3.connect(self.db_path)
+        """Get SQLite connection with thread-safe settings."""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -53,6 +53,7 @@ class DatabaseManager:
                     created_at TIMESTAMP NOT NULL,
                     started_at TIMESTAMP,
                     completed_at TIMESTAMP,
+                    updated_at TIMESTAMP,
                     error_message TEXT,
                     total_files INTEGER DEFAULT 0,
                     success_files INTEGER DEFAULT 0,

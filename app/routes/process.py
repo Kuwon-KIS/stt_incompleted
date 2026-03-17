@@ -28,6 +28,9 @@ router = APIRouter(prefix="/process", tags=["process"])
 # Initialize database manager
 db = DatabaseManager()
 
+# Thread pool for background tasks
+executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="batch-worker-")
+
 
 def determine_date_status(total_files: int, processed_files: int, failed_files: int) -> str:
     """
@@ -209,15 +212,20 @@ async def process_single(req: ProcessRequest):
 
 def run_batch_sync(job_id: str, req: BatchProcessRequest):
     """Synchronous batch processing function that can be called from thread."""
+    logger.info("=" * 80)
+    logger.info("[BATCH_START] job_id=%s, date_range=%s~%s, thread_id=%s", 
+                job_id, req.start_date, req.end_date, threading.current_thread().ident)
+    
     try:
-        logger.info("🚀 배치 작업 시작: job_id=%s, date_range=%s~%s", job_id, req.start_date, req.end_date)
+        logger.info("[BATCH_STATUS_UPDATE] Updating status to 'running'")
         db.update_job_status(job_id, "running")
+        logger.info("[BATCH_STATUS_OK] Status updated successfully")
 
         results = []
         
         # APP_ENV=local이면 Mock 배치 처리 (매우 빠름)
         if config.APP_ENV == "local":
-            logger.info("📌 Mock 모드: 샘플 결과 생성 중...")
+            logger.info("[BATCH_MODE] Mock mode: creating sample results...")
             
             # 날짜 범위 내의 모든 날짜 생성
             current = datetime.strptime(req.start_date, "%Y%m%d")
@@ -276,8 +284,11 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                 
                 current += timedelta(days=1)
             
+            logger.info("[BATCH_RESULTS_GENERATING] Generated %d mock results", len(mock_results))
+            
             # DB에 결과 저장
-            for result_data in mock_results:
+            logger.info("[BATCH_DB_INSERT_START] Saving %d results to database", len(mock_results))
+            for idx, result_data in enumerate(mock_results):
                 result = BatchResult(
                     job_id=job_id,
                     file_date=result_data["date"],
@@ -292,8 +303,10 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                     created_at=result_data.get("created_at", datetime.now(timezone.utc))
                 )
                 db.create_result(result)
+            logger.info("[BATCH_DB_INSERT_OK] Saved %d results to database", len(mock_results))
             
             # 날짜별 상태 업데이트
+            logger.info("[BATCH_DATE_STATUS_UPDATE] Updating status for %d dates", len(date_files))
             for date_str, stats in date_files.items():
                 status = determine_date_status(stats["total"], stats["success"], stats["failed"])
                 db.update_date_status(
@@ -303,28 +316,42 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                     failed=stats["failed"],
                     status=status
                 )
+                logger.debug("[BATCH_DATE_STATUS] date=%s, total=%d, success=%d, status=%s", 
+                            date_str, stats["total"], stats["success"], status)
+            logger.info("[BATCH_DATE_STATUS_OK] Updated status for %d dates", len(date_files))
             
             results = mock_results
-            logger.info("✅ Mock 배치 완료: 총 %d개 파일 처리", len(results))
+            logger.info("[BATCH_MOCK_COMPLETE] Mock batch processing complete: %d files", len(results))
         else:
             # Real batch processing - 실제 환경에서는 여기서 실행
-            logger.info("🔐 실제 배치 처리 모드 (구현 필요)")
+            logger.info("[BATCH_MODE] Real mode (not yet implemented)")
             pass
         
         # 배치 작업 통계 업데이트
+        logger.info("[BATCH_STATS_UPDATE] Updating job statistics")
         db.update_job_stats(
             job_id,
             total=len(results),
             success=sum(1 for r in results if r.get("success")),
             failed=sum(1 for r in results if not r.get("success"))
         )
+        logger.info("[BATCH_STATS_OK] Job stats updated: total=%d, success=%d", 
+                   len(results), sum(1 for r in results if r.get("success")))
         
+        logger.info("[BATCH_STATUS_UPDATE] Updating status to 'completed'")
         db.update_job_status(job_id, "completed")
-        logger.info("✅ 배치 처리 완료: job_id=%s, 결과 수=%d", job_id, len(results))
+        logger.info("[BATCH_COMPLETE] Batch processing completed successfully: job_id=%s, results=%d", 
+                   job_id, len(results))
+        logger.info("=" * 80)
     
     except Exception as e:
-        logger.exception("❌ 배치 처리 실패: %s", e)
-        db.update_job_status(job_id, "failed", error_message=str(e))
+        logger.exception("[BATCH_ERROR] ❌ Batch processing failed: %s", e)
+        try:
+            db.update_job_status(job_id, "failed", error_message=str(e))
+            logger.info("[BATCH_ERROR_STATUS_SAVED] Error status saved to database")
+        except Exception as db_error:
+            logger.exception("[BATCH_ERROR_DB_FAILED] Failed to save error status: %s", db_error)
+        logger.info("=" * 80)
 
 
 async def run_batch_async(job_id: str, req: BatchProcessRequest):
@@ -365,12 +392,14 @@ async def process_batch(req: BatchProcessRequest):
 @router.post("/batch/submit")
 async def process_batch_submit(req: BatchProcessRequest):
     """Submit a batch job and return job_id. The job runs asynchronously in background."""
-    logger.info("📝 배치 제출 요청: start_date=%s, end_date=%s", req.start_date, req.end_date)
+    print(f"\n[BATCH_SUBMIT_ENDPOINT] Received request START", flush=True)
+    logger.info("[BATCH_SUBMIT] Received request: start_date=%s, end_date=%s", req.start_date, req.end_date)
     
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     
     # Create job in database
+    logger.info("[BATCH_SUBMIT_DB] Creating job record in database")
     job = BatchJob(
         id=job_id,
         status="pending",
@@ -378,24 +407,27 @@ async def process_batch_submit(req: BatchProcessRequest):
         end_date=req.end_date,
         created_at=now
     )
-    db.create_job(job)
-    logger.info("✅ 배치 작업 생성: job_id=%s", job_id)
+    try:
+        db.create_job(job)
+        logger.info("[BATCH_SUBMIT_DB_OK] Job created: job_id=%s", job_id)
+    except Exception as e:
+        logger.exception("[BATCH_SUBMIT_DB_ERROR] Failed to create job: %s", e)
+        raise
 
-    # Start background task in a separate thread
-    def run_batch_in_thread():
-        logger.info("🔄 스레드에서 배치 작업 시작: job_id=%s", job_id)
+    # Start background task using ThreadPoolExecutor
+    logger.info("[BATCH_SUBMIT_THREAD] Executing batch synchronously for testing")
+    try:
         run_batch_sync(job_id, req)
-    
-    thread = threading.Thread(target=run_batch_in_thread, daemon=False)
-    thread.start()
-    logger.info("✅ 백그라운드 스레드 시작 완료 (thread_id=%s)", thread.ident)
+        logger.info("[BATCH_SYNC_OK] Synchronous batch execution completed")
+    except Exception as e:
+        logger.exception("[BATCH_SYNC_ERROR] Synchronous batch execution failed: %s", e)
 
     response = {
         "job_id": job_id, 
         "status": "submitted", 
         "date_range": f"{req.start_date} to {req.end_date}"
     }
-    logger.info("✅ 클라이언트에 응답 반환: %s", response)
+    logger.info("[BATCH_SUBMIT_RESPONSE] Returning response: %s", response)
     return response
 
 

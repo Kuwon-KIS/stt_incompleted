@@ -22,9 +22,9 @@ sleep 1
 # Start server in background
 echo "🚀 테스트 서버 시작..."
 cd /Users/a113211/workspace/stt_incompleted
-conda run -n stt-py311 bash -c "APP_ENV=local python -m uvicorn app.main:app --host 127.0.0.1 --port 8002" > /tmp/server.log 2>&1 &
+conda run -n stt-py311 bash -c "APP_ENV=local python -m uvicorn app.main:app --host 127.0.0.1 --port 8002" 2>&1 &
 SERVER_PID=$!
-sleep 3
+sleep 4
 
 # Function to cleanup on exit
 cleanup() {
