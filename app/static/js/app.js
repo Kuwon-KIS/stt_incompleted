@@ -311,6 +311,8 @@ class App {
         const agent = systemStatus.deployment?.agent;
         if (agent) {
             const agentElement = document.getElementById('agent-status');
+            const agentInfoIcon = document.getElementById('agent-info-icon');
+            
             if (agentElement) {
                 let statusColor, statusText;
                 if (agent.status === 'mock') {
@@ -332,6 +334,11 @@ class App {
                     <span class="status-dot" style="background: ${statusColor};"></span>
                     <span title="${tooltip}">${statusText}</span>
                 `;
+                
+                // Update info icon tooltip with endpoint URL
+                if (agentInfoIcon && agent.url) {
+                    agentInfoIcon.title = `엔드포인트: ${agent.url}`;
+                }
             }
         }
     }
