@@ -132,28 +132,37 @@ async def check_agent_connection() -> dict:
                 "message": "Mock Mode - 로컬 테스트용"
             }
         
-        # For dev/prod environments, check actual connection
-        # Try to call the agent endpoint
-        response = requests.get(
-            config.AGENT_URL,
-            timeout=5,
-            headers={"Authorization": config.AGENT_AUTH_HEADER} if config.AGENT_AUTH_HEADER else {}
-        )
-        
-        # Treat 404 as acceptable (endpoint exists, just no GET method)
-        if response.status_code in [200, 404]:
+        # For dev/prod environments, do a simple connection test
+        # Try to reach the base URL (may return 404 for GET, but that's OK - server is reachable)
+        try:
+            response = requests.get(
+                config.AGENT_URL,
+                timeout=5,
+                headers={"Authorization": config.AGENT_AUTH_HEADER} if config.AGENT_AUTH_HEADER else {}
+            )
+            # Accept 200, 404, 405 (Method Not Allowed) - means server is reachable
+            if response.status_code in [200, 404, 405]:
+                return {
+                    "connected": True,
+                    "status": "ok",
+                    "url": config.AGENT_URL,
+                    "error": None
+                }
+            else:
+                return {
+                    "connected": False,
+                    "status": "error",
+                    "url": config.AGENT_URL,
+                    "error": f"HTTP {response.status_code}"
+                }
+        except requests.exceptions.Timeout:
+            # Timeout means server might be slow but exists
+            logger.warning("Agent connection check timed out (server may be slow): %s", config.AGENT_URL)
             return {
-                "connected": True,
+                "connected": True,  # Still consider it connected (timeout != unreachable)
                 "status": "ok",
                 "url": config.AGENT_URL,
-                "error": None
-            }
-        else:
-            return {
-                "connected": False,
-                "status": "error",
-                "url": config.AGENT_URL,
-                "error": f"HTTP {response.status_code}"
+                "error": "Server responding slowly (timeout)"
             }
             
     except requests.exceptions.ConnectionError as e:

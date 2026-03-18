@@ -148,7 +148,7 @@ async def get_date_range():
                 username=config.SFTP_USERNAME,
                 password=config.SFTP_PASSWORD
             )
-            available_dates = client.get_available_dates()
+            available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
             source = "local"
             
         else:
@@ -180,7 +180,7 @@ async def get_date_range():
                         username=config.SFTP_USERNAME,
                         password=config.SFTP_PASSWORD
                     )
-                    available_dates = client.get_available_dates()
+                    available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
                     source = "local"
                 else:
                     # No TEST_MODE: raise error
@@ -372,7 +372,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
                     username=config.SFTP_USERNAME,
                     password=config.SFTP_PASSWORD
                 )
-                available_dates = client.get_available_dates()
+                available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
             else:
                 try:
                     client = create_sftp_client(
@@ -394,7 +394,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
                             username=config.SFTP_USERNAME,
                             password=config.SFTP_PASSWORD
                         )
-                        available_dates = client.get_available_dates()
+                        available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
                     else:
                         raise HTTPException(
                             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
