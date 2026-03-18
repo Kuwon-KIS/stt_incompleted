@@ -1477,7 +1477,8 @@ class App {
 
     /**
      * Schedule auto-analysis with debounce (500ms delay)
-     * This prevents excessive API calls when user is still selecting dates
+     * This only fetches the analysis data, doesn't display results yet
+     * Results are only displayed when user clicks "Analyze" button
      */
     scheduleAutoAnalysis() {
         // Cancel previous timer
@@ -1487,10 +1488,36 @@ class App {
         
         // Set new timer - delay 500ms to allow user to finish selecting
         this.autoAnalysisDebounceTimer = setTimeout(() => {
-            console.log('⏰ Auto-triggering batch analysis...');
-            this.analyzeBatchRange();
+            console.log('⏰ Auto-fetching batch analysis data...');
+            this.fetchBatchAnalysisData();  // Only fetch data, don't display
             this.autoAnalysisDebounceTimer = null;
         }, 500);
+    }
+
+    /**
+     * Fetch batch analysis data without displaying
+     * Used for auto-analysis to populate cache
+     */
+    async fetchBatchAnalysisData() {
+        const selectedRange = window.selectedDateRange;
+        if (!selectedRange) {
+            return;
+        }
+        
+        try {
+            // API 호출
+            const response = await api.analyzeBatch({
+                start_date: selectedRange.start.replace(/-/g, ''),
+                end_date: selectedRange.end.replace(/-/g, '')
+            });
+            
+            // 전역 변수 저장 (캐시)
+            window.batchAnalysisResult = response;
+            console.log('✨ 분석 데이터 캐시됨:', response);
+        } catch (error) {
+            console.error('❌ 분석 데이터 조회 실패:', error);
+            // 에러는 무시 - 사용자가 버튼을 누를 때 다시 시도
+        }
     }
 
     /**
