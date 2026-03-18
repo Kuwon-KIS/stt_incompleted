@@ -124,8 +124,17 @@ class AgentDetector(DetectionStrategy):
         
         try:
             # Call Agent API
-            # Agent endpoint format: {AGENT_URL}/{agent_name}/messages
-            agent_endpoint = f"{self.agent_url}/{self.agent_name}/messages"
+            # Determine endpoint format based on whether it's Mock or Real agent
+            # Mock agent: AGENT_URL is base URL, append agent_name and /messages
+            # Real agent: AGENT_URL is complete endpoint, use as-is
+            if "/mock/agent" in self.agent_url.lower():
+                # Mock agent format: base URL + agent_name + /messages
+                agent_endpoint = f"{self.agent_url}/{self.agent_name}/messages"
+                logger.debug("Using Mock agent endpoint format")
+            else:
+                # Real agent format: complete endpoint URL
+                agent_endpoint = self.agent_url
+                logger.debug("Using Real agent endpoint format")
             
             payload = {
                 "parameters": {
