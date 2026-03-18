@@ -379,14 +379,16 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                 
                 while current <= end:
                     date_str = current.strftime("%Y%m%d")
-                    date_path = f"{config.SFTP_ROOT_PATH}/{date_str}"
+                    # Handle trailing slash in SFTP_ROOT_PATH to avoid double slashes
+                    root_path = config.SFTP_ROOT_PATH.rstrip('/')
+                    date_path = f"{root_path}/{date_str}"
                     date_files[date_str] = {"total": 0, "success": 0, "failed": 0}
                     
                     logger.info("[BATCH_SFTP_LIST] Listing files in: %s", date_path)
                     
                     try:
                         # 해당 날짜 디렉토리에서 .txt 파일 조회
-                        files = sftp_client.list_files(path=date_path, pattern="*.txt")
+                        files = sftp_client.list_files(path=date_path, suffix=".txt")
                         logger.info("[BATCH_FILES_FOUND] Found %d files for date %s", len(files), date_str)
                         
                         # 3. 각 파일 처리 (ThreadPoolExecutor로 병렬 처리)
