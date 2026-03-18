@@ -7,6 +7,7 @@ import logging
 import requests
 import time
 import json
+import asyncio
 from typing import Dict, Any, List
 from .base import DetectionStrategy
 
@@ -152,12 +153,18 @@ class AgentDetector(DetectionStrategy):
             
             logger.debug("Agent request: url=%s, agent=%s", agent_endpoint, self.agent_name)
             
-            response = requests.post(
-                agent_endpoint,
-                json=payload,
-                headers=headers,
-                timeout=60
-            )
+            # Execute requests.post() in executor to avoid blocking event loop
+            # Using a wrapper function to properly pass keyword arguments
+            def make_agent_request():
+                return requests.post(
+                    agent_endpoint,
+                    json=payload,
+                    headers=headers,
+                    timeout=60
+                )
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, make_agent_request)
             response.raise_for_status()
             
             result_data = response.json()
