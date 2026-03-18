@@ -432,6 +432,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
                 # Reuse SFTP client if possible, or create new one
                 has_client = 'client' in locals() and client
                 if not has_client and config.APP_ENV != "local":
+                    logger.info(f"[BATCH_ANALYSIS] Creating new SFTP client to count files")
                     client = create_sftp_client(
                         host=config.SFTP_HOST,
                         port=config.SFTP_PORT,
@@ -444,6 +445,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
                     try:
                         root_path = config.SFTP_ROOT_PATH.rstrip('/')
                         date_path = f"{root_path}/{date_str}"
+                        logger.info(f"[BATCH_ANALYSIS] Counting files for date {date_str}, path: {date_path}")
                         
                         if config.APP_ENV == "local":
                             # Mock client
@@ -454,21 +456,25 @@ async def analyze_batch(req: BatchAnalysisRequest):
                                 password=config.SFTP_PASSWORD
                             )
                             files = mock_client.list_files(path=date_path, suffix=".txt")
+                            logger.info(f"[BATCH_ANALYSIS] Mock list_files returned: {files}")
                         else:
+                            logger.debug(f"[BATCH_ANALYSIS] Calling SFTP list_files for: {date_path}")
                             files = client.list_files(path=date_path, suffix=".txt")
+                            logger.info(f"[BATCH_ANALYSIS] SFTP list_files returned {len(files) if files else 0} files: {files}")
                         
                         file_count = len(files) if files else 0
                         files_per_date[date_str] = file_count
                         total_files_to_process += file_count
-                        logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files")
+                        logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
                     except Exception as e:
-                        logger.warning(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {e}")
+                        logger.error(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {e}", exc_info=True)
                         files_per_date[date_str] = 0
                 
                 if 'client' in locals() and client and config.APP_ENV != "local":
+                    logger.info(f"[BATCH_ANALYSIS] Closing SFTP client")
                     client.close()
             except Exception as e:
-                logger.warning(f"[BATCH_ANALYSIS] Error counting files: {e}")
+                logger.error(f"[BATCH_ANALYSIS] Error counting files: {e}", exc_info=True)
         
         # Step 5: Convert to response format
         response_options = [
