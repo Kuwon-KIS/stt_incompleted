@@ -101,57 +101,104 @@
 
             <!-- Batch Processing Page -->
             <section id="batch" class="page">
-                <h2>⚙️ 배치 처리</h2>
+                <h2>배치 처리</h2>
                 
-                <!-- Date Range Info -->
-                <div class="card" style="background-color: #f0f4f8; border-left: 4px solid #2563eb;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <p style="margin: 0; font-size: 0.9em; color: #666;">📅 <strong>처리 가능 범위</strong></p>
-                            <p id="date-range-info" style="margin: 8px 0 0 0; font-size: 1.1em; font-weight: 600; color: #2563eb;">로딩 중...</p>
+                <!-- Calendar & Selection Info Layout -->
+                <div class="card">
+                    <!-- Title & Available Range Info -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div class="card-title" style="margin: 0;">날짜 범위 선택</div>
+                        <div style="font-size: 0.9em; color: #666;">
+                            <strong>가능한 범위:</strong>
+                            <span id="date-range-info" style="color: #2563eb; font-weight: 600;">로딩 중...</span>
                         </div>
-                        <button id="refresh-date-range" class="btn-secondary" style="padding: 8px 16px; font-size: 0.9em;">새로고침</button>
+                    </div>
+
+                    <!-- Calendar + Selection Info (2-column layout) -->
+                    <div class="batch-calendar-selection-layout">
+                        <!-- Left: Calendar -->
+                        <div>
+                            <!-- Inline Calendar -->
+                            <div id="batch-calendar" style="margin-bottom: 24px;"></div>
+                            
+                            <!-- Date Input Fields -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; background-color: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb; margin-top: 40px;">
+                                <div>
+                                    <label for="start-date-input" style="display: block; font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: 600;">시작 날짜</label>
+                                    <input type="date" id="start-date-input" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9em;">
+                                    <div id="start-date-error" style="display: none; font-size: 0.8em; color: #dc2626; margin-top: 4px;"></div>
+                                </div>
+                                <div>
+                                    <label for="end-date-input" style="display: block; font-size: 0.85em; color: #666; margin-bottom: 4px; font-weight: 600;">종료 날짜</label>
+                                    <input type="date" id="end-date-input" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9em;">
+                                    <div id="end-date-error" style="display: none; font-size: 0.8em; color: #dc2626; margin-top: 4px;"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Selection Info -->
+                        <div id="selection-info-card" style="display: none;">
+                            <!-- Summary Stats -->
+                            <div style="background-color: #f0f4f8; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                    <div style="text-align: center;">
+                                        <div style="font-size: 0.85em; color: #666; margin-bottom: 4px;">처리 가능 날짜</div>
+                                        <div style="font-size: 1.5em; font-weight: 700; color: #059669;" id="stats-date-count">0</div>
+                                    </div>
+                                    <div style="text-align: center;">
+                                        <div style="font-size: 0.85em; color: #666; margin-bottom: 4px;">전체 파일 갯수</div>
+                                        <div style="font-size: 1.5em; font-weight: 700; color: #2563eb;" id="stats-total-files">0</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Date-by-Date Table with Scroll -->
+                            <div style="border: 1px solid #e5e7eb; border-radius: 6px; height: 300px; overflow-y: auto;">
+                                <table style="width: 100%; font-size: 0.9em; border-collapse: collapse;">
+                                    <thead style="background-color: #f3f4f6; position: sticky; top: 0;">
+                                        <tr style="border-bottom: 1px solid #e5e7eb;">
+                                            <th style="padding: 8px; text-align: left; font-weight: 600;">날짜</th>
+                                            <th style="padding: 8px; text-align: center; font-weight: 600;">파일수</th>
+                                            <th style="padding: 8px; text-align: center; font-weight: 600;">상태</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="date-details-tbody">
+                                        <!-- Date entries will be rendered here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="batch-container">
-                    <!-- Calendar Section -->
-                    <div class="card">
-                        <div class="card-title">📅 날짜 선택</div>
-                        
-                        <!-- Calendar -->
-                        <input type="text" id="batch-calendar" placeholder="날짜 범위 선택 (클릭)" style="margin-bottom: 20px; width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 1em;">
-                        
-                        <!-- Analyze Button -->
-                        <button id="analyze-batch-btn" class="btn-primary" style="width: 100%; padding: 12px; font-size: 1em;">
-                            📊 분석 및 옵션 확인
-                        </button>
-                    </div>
+                <!-- Analyze Button -->
+                <button id="analyze-batch-btn" class="btn-primary" style="width: 100%; padding: 12px; font-size: 1em; margin-top: 20px;">
+                    분석 및 옵션 확인
+                </button>
 
-                    <!-- Analysis Result Section (Initially Hidden) -->
-                    <div id="analysis-result-container" style="display: none;">
-                        <div class="card" style="border-left: 4px solid #059669;">
-                            <div class="card-title">✨ 처리 방식 선택</div>
-                            
-                            <!-- Case Info -->
-                            <div id="case-info-box" style="background-color: #ecfdf5; padding: 12px; border-radius: 4px; margin-bottom: 16px; display: none;">
-                                <p id="case-description" style="margin: 0; font-size: 0.9em; line-height: 1.5;"></p>
-                            </div>
-                            
-                            <!-- Options -->
-                            <div id="options-container" style="display: flex; flex-direction: column; gap: 10px;">
-                                <!-- Options will be rendered here -->
-                            </div>
-                            
-                            <!-- Action Buttons -->
-                            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                                <button id="start-processing-btn" class="btn-primary" style="flex: 1;">
-                                    ▶️ 처리 시작
-                                </button>
-                                <button id="cancel-analysis-btn" class="btn-secondary" style="flex: 1;">
-                                    취소
-                                </button>
-                            </div>
+                <!-- Step 5: Analysis Result Section (조건부 표시) -->
+                <div id="analysis-result-container" style="display: none;">
+                    <div class="card" style="border-left: 4px solid #059669;">
+                        <div class="card-title">처리 방식 선택</div>
+                        
+                        <!-- Case Info -->
+                        <div id="case-info-box" style="background-color: #ecfdf5; padding: 12px; border-radius: 4px; margin-bottom: 16px; display: none;">
+                            <p id="case-description" style="margin: 0; font-size: 0.9em; line-height: 1.5;"></p>
+                        </div>
+                        
+                        <!-- Options -->
+                        <div id="options-container" style="display: flex; flex-direction: column; gap: 10px;">
+                            <!-- Options will be rendered here -->
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button id="start-processing-btn" class="btn-primary" style="flex: 1;">
+                                처리 시작
+                            </button>
+                            <button id="cancel-analysis-btn" class="btn-secondary" style="flex: 1;">
+                                취소
+                            </button>
                         </div>
                     </div>
                 </div>

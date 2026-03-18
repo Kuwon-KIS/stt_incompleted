@@ -76,6 +76,22 @@ class App {
             console.warn('⚠️ cancel-analysis-btn not found');
         }
 
+        // 날짜 입력 필드 이벤트 리스너
+        const startDateInput = document.getElementById('start-date-input');
+        const endDateInput = document.getElementById('end-date-input');
+        if (startDateInput) {
+            startDateInput.addEventListener('change', () => {
+                console.log('📅 시작 날짜 입력 변경');
+                this.onDateInputChange();
+            });
+        }
+        if (endDateInput) {
+            endDateInput.addEventListener('change', () => {
+                console.log('📅 종료 날짜 입력 변경');
+                this.onDateInputChange();
+            });
+        }
+
         // 새로고침 버튼
         const refreshBtn = document.getElementById('refresh-date-range');
         if (refreshBtn) {
@@ -1079,6 +1095,20 @@ class App {
             
             // 전역 변수로 저장
             window.batchDateStats = data;
+            
+            // dateStatusMap 생성
+            window.dateStatusMap = {};
+            if (data.dates && Array.isArray(data.dates)) {
+                data.dates.forEach(stat => {
+                    window.dateStatusMap[stat.date] = {
+                        file_count: stat.total_files || 0,
+                        processed_count: stat.processed_files || 0,
+                        failed_count: stat.failed_files || 0,
+                        status: stat.status || 'unknown'
+                    };
+                });
+            }
+            console.log('📊 Date status map 생성 완료:', window.dateStatusMap);
         } catch (error) {
             console.error('❌ Date stats 로드 실패:', error);
         }
@@ -1109,14 +1139,15 @@ class App {
         
         console.log('📅 Min date:', minDate, 'Max date:', maxDate);
         
-        // flatpickr 캘린더 생성
-        // range mode에서는 disable 없이 모든 범위에서 선택 가능하게 함
+        // flatpickr 캘린더 생성 (inline 모드 - 항상 표시)
         flatpickr(calendarEl, {
             mode: 'range',
             dateFormat: 'Y-m-d',
             minDate: minDate,
             maxDate: maxDate,
-            locale: 'ko',
+            inline: true,  // 인라인 캘린더로 항상 표시
+            static: false,
+            defaultDate: minDate ? [minDate] : [],
             onChange: (selectedDates) => {
                 console.log('📅 onChange triggered:', selectedDates);
                 this.onCalendarDateChange(selectedDates);
@@ -1161,6 +1192,22 @@ class App {
             };
             
             console.log(`✅ 날짜 범위 선택: ${startStr} ~ ${endStr}`);
+            
+            // 입력 필드 업데이트
+            this.updateDateInputsFromCalendar(startStr, endStr);
+            
+            // 선택 정보 카드 업데이트
+            const summary = this.calculateSelectionSummary(startDate, endDate);
+            this.updateSelectionCard(summary);
+        } else if (selectedDates.length === 0) {
+            // 선택 해제
+            window.selectedDateRange = null;
+            const card = document.getElementById('selection-info-card');
+            if (card) {
+                card.style.display = 'none';
+            }
+            // 입력 필드 초기화
+            this.clearDateInputs();
         }
     }
 
@@ -1289,6 +1336,11 @@ class App {
             });
         } else {
             optionsContainer.innerHTML = '<p style="text-align: center; color: #666;">선택 가능한 옵션이 없습니다</p>';
+        }
+        
+        // 버튼 텍스트를 "수행하기"로 설정 (고정)
+        if (startButton) {
+            startButton.textContent = '수행하기';
         }
         
         // 결과 컨테이너 표시
@@ -1427,6 +1479,328 @@ class App {
             'error': '오류',
         };
         return statusMap[status] || status;
+    }
+
+    // ===== 선택 요약 및 카드 업데이트 =====
+
+    /**
+     * 선택 범위의 요약 정보 계산
+     */
+    calculateSelectionSummary(startDate, endDate) {
+        let totalFiles = 0;
+        let dateDetails = [];
+        
+        const dateStatusMap = window.dateStatusMap || {};
+        
+        // 선택 범위의 모든 날짜 순회
+        let current = new Date(startDate);
+        while (current <= endDate) {
+            const dateStr = this.formatDateAsYYYYMMDD(current);
+            const stat = dateStatusMap[dateStr];
+            
+            if (stat) {
+                totalFiles += stat.file_count || 0;
+                dateDetails.push({
+                    date: dateStr,
+                    files: stat.file_count || 0,
+                    status: stat.status || 'unknown'
+                });
+            }
+            
+            // 다음 날짜로
+            current.setDate(current.getDate() + 1);
+        }
+        
+        return {
+            dateCount: dateDetails.length,
+            totalFiles: totalFiles,
+            details: dateDetails
+        };
+    }
+
+    /**
+     * 선택 정보 카드 업데이트
+     */
+    updateSelectionCard(summary) {
+        const card = document.getElementById('selection-info-card');
+        if (!card) return;
+        
+        // 요약 통계 업데이트
+        const dateCount = document.getElementById('stats-date-count');
+        const totalFiles = document.getElementById('stats-total-files');
+        
+        if (dateCount) {
+            dateCount.textContent = summary.dateCount || 0;
+        }
+        if (totalFiles) {
+            totalFiles.textContent = summary.totalFiles || 0;
+        }
+        
+        // 날짜별 상세 테이블 업데이트
+        const tbody = document.getElementById('date-details-tbody');
+        if (tbody) {
+            tbody.innerHTML = '';
+            
+            summary.details.forEach(detail => {
+                const row = document.createElement('tr');
+                const dateDisplay = this.formatDateForDisplay(detail.date);
+                const statusText = this.getDateStatusText(detail.status);
+                const statusColor = this.getDateStatusColor(detail.status);
+                
+                row.innerHTML = `
+                    <td style="padding: 8px;">${dateDisplay}</td>
+                    <td style="padding: 8px; text-align: center;">${detail.files}</td>
+                    <td style="padding: 8px; text-align: center;">
+                        <span style="background-color: ${statusColor}; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.85em;">${statusText}</span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        // 카드 표시
+        card.style.display = 'block';
+    }
+
+    /**
+     * 날짜 상태 텍스트
+     */
+    getDateStatusText(status) {
+        const statusMap = {
+            'done': '완료',
+            'incomplete': '부분',
+            'ready': '대기',
+            'failed': '불가',
+            'unknown': '미정'
+        };
+        return statusMap[status] || status;
+    }
+
+    /**
+     * 날짜 상태 배경색
+     */
+    getDateStatusColor(status) {
+        const colorMap = {
+            'done': '#10b981',
+            'incomplete': '#f59e0b',
+            'ready': '#3b82f6',
+            'failed': '#ef4444',
+            'unknown': '#6b7280'
+        };
+        return colorMap[status] || '#9ca3af';
+    }
+
+    /**
+     * Date를 YYYYMMDD 문자열로 변환
+     */
+    formatDateAsYYYYMMDD(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}${month}${day}`;
+    }
+
+    // ===== 날짜 입력 필드 관련 메서드 =====
+
+    /**
+     * 캘린더에서 입력 필드 업데이트
+     */
+    updateDateInputsFromCalendar(startStr, endStr) {
+        const startInput = document.getElementById('start-date-input');
+        const endInput = document.getElementById('end-date-input');
+        
+        if (startInput) {
+            startInput.value = startStr;
+            this.clearDateError('start');
+        }
+        if (endInput) {
+            endInput.value = endStr;
+            this.clearDateError('end');
+        }
+    }
+
+    /**
+     * 입력 필드 초기화
+     */
+    clearDateInputs() {
+        const startInput = document.getElementById('start-date-input');
+        const endInput = document.getElementById('end-date-input');
+        
+        if (startInput) {
+            startInput.value = '';
+            this.clearDateError('start');
+        }
+        if (endInput) {
+            endInput.value = '';
+            this.clearDateError('end');
+        }
+    }
+
+    /**
+     * 입력 필드 변경 이벤트
+     */
+    onDateInputChange() {
+        const startInput = document.getElementById('start-date-input');
+        const endInput = document.getElementById('end-date-input');
+        
+        const startStr = startInput?.value || '';
+        const endStr = endInput?.value || '';
+        
+        // 둘 다 비어있으면 리턴
+        if (!startStr && !endStr) {
+            return;
+        }
+        
+        // 현재 선택된 범위와 병합 - 하나만 바껴도 반영되도록
+        const finalStartStr = startStr || window.selectedDateRange?.start || '';
+        const finalEndStr = endStr || window.selectedDateRange?.end || '';
+        
+        // 두 값이 모두 존재해야만 진행
+        if (!finalStartStr || !finalEndStr) {
+            return;
+        }
+        
+        // 범위 검증
+        const validationResult = this.validateDateRange(finalStartStr, finalEndStr);
+        if (!validationResult.valid) {
+            this.showDateError(validationResult.errorType, validationResult.message);
+            return;
+        }
+        
+        // 검증 성공 시 에러 메시지 제거
+        this.clearDateError('start');
+        this.clearDateError('end');
+        
+        // 캘린더 업데이트 (무한 루프 방지)
+        this.updateCalendarFromDateInputsWithoutEvent(finalStartStr, finalEndStr);
+        
+        // date status 업데이트
+        const startDate = new Date(finalStartStr + 'T00:00:00Z');
+        const endDate = new Date(finalEndStr + 'T00:00:00Z');
+        const summary = this.calculateSelectionSummary(startDate, endDate);
+        this.updateSelectionCard(summary);
+    }
+
+    /**
+     * 범위 검증
+     */
+    validateDateRange(startStr, endStr) {
+        // 날짜 형식 확인
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(startStr) || !dateRegex.test(endStr)) {
+            return { valid: false, errorType: 'start', message: '날짜 형식: YYYY-MM-DD' };
+        }
+        
+        // UTC 기준으로 생성해서 시간대 문제 방지
+        const startDate = new Date(startStr + 'T00:00:00Z');
+        const endDate = new Date(endStr + 'T00:00:00Z');
+        
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            return { valid: false, errorType: 'start', message: '유효한 날짜가 아닙니다' };
+        }
+        
+        // 타임스탐프로 정확하게 비교
+        if (startDate.getTime() > endDate.getTime()) {
+            return { valid: false, errorType: 'start', message: '시작일이 종료일보다 뒤입니다' };
+        }
+        
+        if (!window.batchDateRange) {
+            return { valid: true };
+        }
+        
+        const minDateStr = window.batchDateRange.min_date ? this.formatDateForDisplay(window.batchDateRange.min_date) : null;
+        const maxDateStr = window.batchDateRange.max_date ? this.formatDateForDisplay(window.batchDateRange.max_date) : null;
+        
+        const minDate = minDateStr ? new Date(minDateStr + 'T00:00:00Z') : null;
+        const maxDate = maxDateStr ? new Date(maxDateStr + 'T00:00:00Z') : null;
+        
+        // 타임스탐프로 정확하게 비교
+        if (minDate && startDate.getTime() < minDate.getTime()) {
+            return { valid: false, errorType: 'start', message: `범위 초과: ${minDateStr}보다 앞` };
+        }
+        
+        if (maxDate && endDate.getTime() > maxDate.getTime()) {
+            return { valid: false, errorType: 'end', message: `범위 초과: ${maxDateStr}를 초과` };
+        }
+        
+        return { valid: true };
+    }
+
+    /**
+     * 날짜 에러 표시
+     */
+    showDateError(errorType, message) {
+        const errorEl = document.getElementById(`${errorType}-date-error`);
+        if (errorEl) {
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        }
+    }
+
+    /**
+     * 날짜 에러 제거
+     */
+    clearDateError(errorType) {
+        const errorEl = document.getElementById(`${errorType}-date-error`);
+        if (errorEl) {
+            errorEl.style.display = 'none';
+            errorEl.textContent = '';
+        }
+    }
+
+    /**
+     * 입력 필드에서 캘린더 업데이트 (이벤트 무시)
+     */
+    updateCalendarFromDateInputsWithoutEvent(startStr, endStr) {
+        const calendarEl = document.getElementById('batch-calendar');
+        if (!calendarEl || !calendarEl._flatpickr) {
+            console.warn('⚠️ 캘린더가 초기화되지 않았습니다');
+            return;
+        }
+        
+        const startDate = new Date(startStr + 'T00:00:00Z');
+        const endDate = new Date(endStr + 'T00:00:00Z');
+        
+        // 현재 선택된 날짜와 비교 (같으면 스킵)
+        const current = calendarEl._flatpickr.selectedDates;
+        if (current.length === 2) {
+            const currentStart = this.formatDateAsYYYYMMDD(current[0]);
+            const currentEnd = this.formatDateAsYYYYMMDD(current[1]);
+            
+            if (currentStart === startStr && currentEnd === endStr) {
+                console.log('⏭️ 캘린더: 이미 같은 범위가 선택됨, 스킵');
+                return;
+            }
+        }
+        
+        // change 이벤트 핸들러 임시 해제
+        const onChangeHandlers = calendarEl._flatpickr.config.onChange || [];
+        calendarEl._flatpickr.config.onChange = [];
+        
+        // 캘린더 업데이트
+        calendarEl._flatpickr.setDate([startDate, endDate], true);
+        
+        // change 이벤트 핸들러 복원
+        calendarEl._flatpickr.config.onChange = onChangeHandlers;
+        
+        console.log(`✅ 캘린더 업데이트 (이벤트 무시): ${startStr} ~ ${endStr}`);
+    }
+
+    /**
+     * 입력 필드에서 캘린더 업데이트 (기존)
+     */
+    updateCalendarFromDateInputs(startStr, endStr) {
+        const calendarEl = document.getElementById('batch-calendar');
+        if (!calendarEl || !calendarEl._flatpickr) {
+            console.warn('⚠️ 캘린더가 초기화되지 않았습니다');
+            return;
+        }
+        
+        const startDate = new Date(startStr);
+        const endDate = new Date(endStr);
+        
+        calendarEl._flatpickr.setDate([startDate, endDate], true);
+        console.log(`✅ 캘린더 업데이트: ${startStr} ~ ${endStr}`);
     }
 }
 

@@ -920,6 +920,21 @@ body {
 
 /* ===== Phase 4: Calendar Batch UI ===== */
 
+/* 캘린더 + 선택정보 2열 레이아웃 */
+.batch-calendar-selection-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-top: 16px;
+}
+
+@media (max-width: 1024px) {
+    .batch-calendar-selection-layout {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+
 .batch-container {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1118,4 +1133,158 @@ body {
 #selected-range {
     font-family: 'Courier New', monospace;
     color: #2563eb;
+}
+
+/* ===== Phase 4 개선: 캘린더 상태 시각화 ===== */
+
+/* 상태별 날짜 셀 스타일 (flatpickr) */
+.flatpickr-day.flatpickr-date-completed {
+    background-color: #d1fae5 !important;
+    color: #065f46 !important;
+    font-weight: 600 !important;
+}
+
+.flatpickr-day.flatpickr-date-partial {
+    background-color: #fed7aa !important;
+    color: #92400e !important;
+    font-weight: 600 !important;
+}
+
+.flatpickr-day.flatpickr-date-pending {
+    background-color: #dbeafe !important;
+    color: #1e40af !important;
+    font-weight: 600 !important;
+}
+
+.flatpickr-day.selected {
+    background-color: #3b82f6 !important;
+    border-color: #1e40af !important;
+    color: white !important;
+}
+
+.flatpickr-day.inRange {
+    background-color: #eff6ff !important;
+    color: #1e40af !important;
+}
+
+/* 한국 locale 날짜 표시 수정 */
+.flatpickr-day {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+/* 상태 아이콘 */
+.date-status-icon {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    font-size: 0.8em;
+    line-height: 1;
+}
+
+/* 파일 개수 배지 */
+.date-file-badge {
+    position: absolute;
+    bottom: 2px;
+    left: 2px;
+    background-color: #2563eb;
+    color: white;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6em;
+    font-weight: bold;
+    line-height: 1;
+}
+
+/* 선택 정보 카드 */
+#selection-info-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+#selection-info-card .card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+#selection-info-card p {
+    margin: 8px 0;
+    font-size: 0.95em;
+    color: #555;
+}
+
+#selection-info-card strong {
+    color: #333;
+    font-weight: 600;
+}
+
+/* 통계 박스 */
+.stat-box {
+    padding: 8px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+}
+
+.stat-box:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.stat-box div:first-child {
+    font-size: 1.3em;
+    font-weight: bold;
+    margin-bottom: 2px;
+}
+
+.stat-box div:last-child {
+    font-size: 0.85em;
+    opacity: 0.9;
+}
+
+/* 범례 (legend) */
+.calendar-legend {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+    font-size: 0.85em;
+    text-align: center;
+}
+
+.calendar-legend > div {
+    padding: 6px;
+    border-radius: 4px;
+}
+
+/* 배치 컨테이너 반응형 */
+.batch-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 }
