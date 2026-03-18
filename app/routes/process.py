@@ -387,19 +387,20 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                     logger.info("[BATCH_SFTP_LIST] Listing files in: %s", date_path)
                     
                     try:
-                        # 해당 날짜 디렉토리에서 .txt 파일 조회
-                        files = sftp_client.list_files(path=date_path, suffix=".txt")
-                        logger.info("[BATCH_FILES_FOUND] Found %d files for date %s", len(files), date_str)
+                        # 해당 날짜 디렉토리에서 .txt 파일 조회 (파일명만 반환)
+                        file_names = sftp_client.list_files(path=date_path, suffix=".txt")
+                        logger.info("[BATCH_FILES_FOUND] Found %d files for date %s", len(file_names), date_str)
                         
                         # 3. 각 파일 처리 (ThreadPoolExecutor로 병렬 처리)
-                        def process_file(file_path):
+                        def process_file(file_name):
                             """단일 파일 처리 함수 (병렬 실행용)"""
                             try:
-                                filename = file_path.split("/")[-1]
+                                # list_files returns only filename, need to construct full path
+                                file_path = f"{date_path}/{file_name}"
                                 logger.debug("[BATCH_FILE_PROCESS] Processing: %s (thread=%s)", 
-                                           filename, threading.current_thread().ident)
+                                           file_name, threading.current_thread().ident)
                                 
-                                # 파일 내용 읽기
+                                # 파일 내용 읽기 - 전체 경로 사용
                                 content = sftp_client.read_file(file_path)
                                 
                                 # AI 처리 (vLLM 또는 Agent)
@@ -410,7 +411,7 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 now = datetime.now(timezone.utc)
                                 result_item = {
                                     "date": date_str,
-                                    "filename": filename,
+                                    "filename": file_name,
                                     "success": True,
                                     "text": content,
                                     "category": ai_result.get("category", "unknown"),
@@ -420,7 +421,7 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                     "processing_time_ms": ai_result.get("processing_time_ms", 0),
                                     "created_at": now
                                 }
-                                logger.debug("[BATCH_FILE_OK] %s processed successfully", filename)
+                                logger.debug("[BATCH_FILE_OK] %s processed successfully", file_name)
                                 return result_item, True, None
                                 
                             except Exception as file_error:
@@ -429,12 +430,12 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 return None, False, str(file_error)
                         
                         # ThreadPoolExecutor로 파일들을 병렬 처리
-                        logger.info("[BATCH_PARALLEL_START] Processing %d files in parallel", len(files))
+                        logger.info("[BATCH_PARALLEL_START] Processing %d files in parallel", len(file_names))
                         file_futures = []
                         
                         with ThreadPoolExecutor(max_workers=5, thread_name_prefix=f"batch-{job_id}-") as file_executor:
-                            for file_path in files:
-                                future = file_executor.submit(process_file, file_path)
+                            for file_name in file_names:
+                                future = file_executor.submit(process_file, file_name)
                                 file_futures.append(future)
                             
                             # 모든 파일 처리 완료 대기
