@@ -726,10 +726,10 @@ async def process_batch_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    # Get results if completed
+    # Get results for all jobs (not just completed ones)
     results = None
-    if job.status == "completed":
-        db_results = db.get_results_by_job(job_id)
+    db_results = db.get_results_by_job(job_id)
+    if db_results:
         results = [r.to_dict() for r in db_results]
 
     return {

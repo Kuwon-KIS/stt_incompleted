@@ -197,6 +197,80 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def get_recent_jobs(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get most recent batch jobs.
+        
+        Args:
+            limit: Number of recent jobs to return (default 5)
+            
+        Returns:
+            List of job dictionaries sorted by created_at DESC
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT id, status, start_date, end_date, created_at, 
+                       total_files, success_files, failed_files
+                FROM batch_jobs 
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (limit,))
+            
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                result.append({
+                    'id': row['id'],
+                    'status': row['status'],
+                    'start_date': row['start_date'],
+                    'end_date': row['end_date'],
+                    'created_at': row['created_at'],
+                    'total_files': row['total_files'],
+                    'success_files': row['success_files'],
+                    'failed_files': row['failed_files']
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get recent jobs: {e}")
+            return []
+        finally:
+            conn.close()
+
+    def get_all_jobs(self) -> List[Dict[str, Any]]:
+        """Get all batch jobs sorted by created_at DESC (most recent first)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT id, status, start_date, end_date, created_at, 
+                       total_files, success_files, failed_files
+                FROM batch_jobs 
+                ORDER BY created_at DESC
+            """)
+            
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                result.append({
+                    'id': row['id'],
+                    'status': row['status'],
+                    'start_date': row['start_date'],
+                    'end_date': row['end_date'],
+                    'created_at': row['created_at'],
+                    'total_files': row['total_files'],
+                    'success_files': row['success_files'],
+                    'failed_files': row['failed_files']
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get all jobs: {e}")
+            raise
+        finally:
+            conn.close()
+
     def get_jobs_by_date_range(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
         """Get jobs that overlap with the given date range (for duplicate detection).
         

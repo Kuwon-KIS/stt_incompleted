@@ -214,6 +214,84 @@ async def get_date_range():
         )
 
 
+@router.get("/recent-jobs")
+async def get_recent_jobs(limit: int = Query(5, ge=1, le=50, description="Number of jobs to return")):
+    """Get most recent batch jobs for dashboard display.
+    
+    Args:
+        limit: Number of recent jobs (default 5, max 50)
+        
+    Returns:
+        List of batch jobs with execution status and statistics
+    """
+    try:
+        jobs = db.get_recent_jobs(limit)
+        return {
+            "jobs": jobs,
+            "total_count": len(jobs)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get recent jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/jobs/all")
+async def get_all_jobs():
+    """Get all batch jobs sorted by created_at DESC.
+    
+    Used for initial history page load to show all jobs.
+    
+    Returns:
+        List of all batch jobs sorted by created_at DESC
+    """
+    try:
+        jobs = db.get_all_jobs()
+        return {
+            "jobs": jobs,
+            "total_count": len(jobs)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get all jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/jobs")
+async def get_jobs_by_date_range(
+    start_date: str = Query(..., description="Start date (YYYYMMDD)"),
+    end_date: str = Query(..., description="End date (YYYYMMDD)")
+):
+    """Get all batch jobs that overlap with the given date range.
+    
+    Used for history view filtering. Returns jobs where:
+    - job.start_date <= given_end_date AND job.end_date >= given_start_date
+    
+    Args:
+        start_date: Start date (YYYYMMDD format)
+        end_date: End date (YYYYMMDD format)
+        
+    Returns:
+        List of batch jobs sorted by created_at DESC
+    """
+    try:
+        jobs = db.get_jobs_by_date_range(start_date, end_date)
+        return {
+            "jobs": jobs,
+            "total_count": len(jobs)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get jobs by date range: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
 @router.get("/date-stats", response_model=DateStatsResponse)
 async def get_date_statistics(
     start_date: Optional[str] = Query(None, description="Start date (YYYYMMDD)"),

@@ -260,31 +260,48 @@ class App {
             }
         }
 
-        // Load date statistics
+        // Load date statistics and recent jobs
         this.loadDateStatistics();
+        this.loadRecentJobs();
     }
 
     async loadDateStatistics() {
         try {
-            const response = await api.getDateStatistics();
+            // 유효한 날짜 범위 먼저 로드 (없으면 현재 설정된 범위 사용)
+            if (!window.batchDateRange) {
+                await this.loadBatchDateRange();
+            }
+            
+            let url = '/api/admin/date-stats';
+            
+            // 유효한 범위가 있으면 필터링
+            if (window.batchDateRange && window.batchDateRange.min_date && window.batchDateRange.max_date) {
+                url += `?start_date=${window.batchDateRange.min_date}&end_date=${window.batchDateRange.max_date}`;
+                console.log(`📊 유효한 범위 내 날짜별 통계 조회: ${window.batchDateRange.min_date} ~ ${window.batchDateRange.max_date}`);
+            }
+            
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
             
             // Update summary stats
-            if (response.total_files !== undefined) {
-                document.getElementById('total-files').textContent = response.total_files;
-                document.getElementById('success-count').textContent = response.total_success;
-                document.getElementById('error-count').textContent = response.total_failed;
+            if (data.total_files !== undefined) {
+                document.getElementById('total-files').textContent = data.total_files;
+                document.getElementById('success-count').textContent = data.total_success || 0;
+                document.getElementById('error-count').textContent = data.total_failed || 0;
             }
 
             // Update date-wise table
             const tbody = document.getElementById('date-stats-tbody');
             if (!tbody) return;
 
-            if (!response.dates || response.dates.length === 0) {
+            if (!data.dates || data.dates.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #999;">처리된 날짜가 없습니다</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = response.dates.map(stat => {
+            tbody.innerHTML = data.dates.map(stat => {
                 const date = stat.date;
                 const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
                 const statusBadge = this.getStatusBadge(stat.status);
@@ -296,7 +313,7 @@ class App {
                     <tr>
                         <td>${formattedDate}</td>
                         <td>${stat.total_files}</td>
-                        <td class="success">${stat.success_files}</td>
+                        <td class="success">${stat.processed_files}</td>
                         <td class="error">${stat.failed_files}</td>
                         <td>${statusBadge}</td>
                         <td style="font-size: 0.9em;">${lastProcessed}</td>
@@ -308,6 +325,54 @@ class App {
             const tbody = document.getElementById('date-stats-tbody');
             if (tbody) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #c00;">통계 로드 실패</td></tr>';
+            }
+        }
+    }
+
+    async loadRecentJobs() {
+        try {
+            const response = await fetch('/api/admin/recent-jobs?limit=5');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
+            const container = document.getElementById('recent-jobs');
+            if (!container) return;
+
+            if (!data.jobs || data.jobs.length === 0) {
+                container.innerHTML = '<p class="empty-state">최근 작업이 없습니다</p>';
+                return;
+            }
+
+            container.innerHTML = data.jobs.map(job => {
+                const startDate = job.start_date;
+                const endDate = job.end_date;
+                const formattedRange = `${startDate.substring(0, 4)}-${startDate.substring(4, 6)}-${startDate.substring(6, 8)} ~ ${endDate.substring(0, 4)}-${endDate.substring(4, 6)}-${endDate.substring(6, 8)}`;
+                const statusClass = job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'info';
+                const statusText = job.status === 'completed' ? '완료' : job.status === 'running' ? '실행 중' : job.status === 'failed' ? '실패' : '대기';
+                const createdAt = new Date(job.created_at).toLocaleString('ko-KR');
+                
+                return `
+                    <div style="padding: 12px; border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-weight: 600; margin-bottom: 4px;">${formattedRange}</div>
+                                <div style="font-size: 0.85em; color: #666;">
+                                    파일: ${job.total_files} | 성공: ${job.success_files} | 실패: ${job.failed_files}
+                                </div>
+                                <div style="font-size: 0.8em; color: #999; margin-top: 4px;">${createdAt}</div>
+                            </div>
+                            <span style="background: ${statusClass === 'success' ? '#10b981' : statusClass === 'error' ? '#ef4444' : '#3b82f6'}; color: white; padding: 4px 8px; border-radius: 3px; font-size: 0.85em; font-weight: 600;">
+                                ${statusText}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('최근 작업 로드 실패:', error);
+            const container = document.getElementById('recent-jobs');
+            if (container) {
+                container.innerHTML = '<p class="empty-state">작업 이력을 로드할 수 없습니다</p>';
             }
         }
     }
@@ -549,37 +614,52 @@ class App {
 
     // ===== Job History & Detail View =====
 
-    async loadJobHistory() {
+    async loadJobHistory(startDate = null, endDate = null) {
         try {
-            // 메모리에서 현재 job_id 가져오기
             let jobs = [];
-            if (window.currentJob && window.currentJob.job_id) {
-                // API에서 완전한 job 정보 조회
+            
+            // 날짜 범위가 지정된 경우 (이전 기록 보기)
+            if (startDate && endDate) {
+                console.log(`📅 날짜 범위로 작업 조회: ${startDate} ~ ${endDate}`);
                 try {
-                    const response = await fetch(`/process/batch/status/${window.currentJob.job_id}`);
-                    if (response.ok) {
-                        const fullJob = await response.json();
-                        jobs = [fullJob];
-                        console.log('✅ Job 정보 조회 완료:', fullJob);
-                    } else {
-                        console.warn('⚠️ Job 정보 조회 실패, 기본 정보 사용');
-                        jobs = [window.currentJob];
+                    const response = await fetch(`/api/admin/jobs?start_date=${startDate}&end_date=${endDate}`);
+                    if (!response.ok) {
+                        throw new Error(`API 응답 오류: ${response.status}`);
                     }
+                    const data = await response.json();
+                    jobs = data.jobs || [];
+                    console.log(`✅ 조회된 작업 수: ${jobs.length}`);
                 } catch (error) {
-                    console.warn('⚠️ Job API 조회 오류, 기본 정보 사용:', error);
-                    jobs = [window.currentJob];
+                    console.error('❌ 날짜 범위 작업 조회 실패:', error);
+                    jobs = [];
+                }
+            } else {
+                // 날짜 범위 없이 전체 이력 조회 (이력 페이지 첫 진입)
+                console.log('📥 전체 작업 이력 조회 중...');
+                try {
+                    const response = await fetch('/api/admin/jobs/all');
+                    if (!response.ok) {
+                        throw new Error(`API 응답 오류: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    jobs = data.jobs || [];
+                    console.log(`✅ 조회된 전체 작업 수: ${jobs.length}`);
+                } catch (error) {
+                    console.error('❌ 전체 작업 조회 실패:', error);
+                    jobs = [];
                 }
             }
-            this.displayJobList(jobs);
+            
+            this.displayJobList(jobs, startDate, endDate);
         } catch (error) {
             console.error('작업 이력 로드 실패:', error);
         }
     }
 
-    displayJobList(jobs) {
+    displayJobList(jobs, filterStartDate = null, filterEndDate = null) {
         const container = document.getElementById('jobs-list');
         
-        console.log('📋 displayJobList 호출:', { jobCount: jobs?.length, container: !!container });
+        console.log('📋 displayJobList 호출:', { jobCount: jobs?.length, container: !!container, filterStartDate, filterEndDate });
         
         if (!container) {
             console.error('❌ jobs-list 컨테이너를 찾을 수 없습니다!');
@@ -588,34 +668,90 @@ class App {
 
         if (!jobs || jobs.length === 0) {
             console.log('📭 작업 이력 없음');
-            container.innerHTML = '<p class="empty-state">작업 이력이 없습니다</p>';
+            let emptyMessage = '작업 이력이 없습니다';
+            if (filterStartDate && filterEndDate) {
+                const formattedStart = `${filterStartDate.substring(0, 4)}-${filterStartDate.substring(4, 6)}-${filterStartDate.substring(6, 8)}`;
+                const formattedEnd = `${filterEndDate.substring(0, 4)}-${filterEndDate.substring(4, 6)}-${filterEndDate.substring(6, 8)}`;
+                emptyMessage = `${formattedStart} ~ ${formattedEnd} 기간의 작업 이력이 없습니다`;
+            }
+            container.innerHTML = `<p class="empty-state">${emptyMessage}</p>`;
             return;
+        }
+
+        // 날짜 범위 필터 정보 표시
+        if (filterStartDate && filterEndDate) {
+            const formattedStart = `${filterStartDate.substring(0, 4)}-${filterStartDate.substring(4, 6)}-${filterStartDate.substring(6, 8)}`;
+            const formattedEnd = `${filterEndDate.substring(0, 4)}-${filterEndDate.substring(4, 6)}-${filterEndDate.substring(6, 8)}`;
+            console.log(`🔍 필터 적용: ${formattedStart} ~ ${formattedEnd}`);
         }
 
         console.log('🔄 Job 렌더링 시작:', jobs);
         container.innerHTML = jobs.map(job => this.renderJobItem(job)).join('');
 
-        // 확장 버튼 이벤트
-        document.querySelectorAll('.job-toggle').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+        // 확장 버튼 이벤트 등록
+        const toggleBtns = document.querySelectorAll('.job-toggle');
+        console.log(`📌 토글 버튼 감지됨: ${toggleBtns.length}개`);
+        
+        toggleBtns.forEach((btn, idx) => {
+            console.log(`📌 버튼 ${idx+1} 이벤트 등록 중...`);
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const jobItem = btn.closest('.job-item');
                 const fileResults = jobItem?.querySelector('.file-results');
+                console.log(`🔘 토글 클릭됨! jobItem=${!!jobItem}, fileResults=${!!fileResults}`);
+                
                 if (fileResults) {
-                    const isHidden = fileResults.style.display === 'none';
-                    fileResults.style.display = isHidden ? 'block' : 'none';
-                    btn.classList.toggle('expanded', isHidden);
-                    // 버튼 텍스트 업데이트
-                    btn.textContent = isHidden ? '파일 목록 숨기기' : '파일 목록 보기';
-                    // 버튼 스타일 업데이트
-                    btn.style.background = isHidden ? '#d1d5db' : '#e5e7eb';
+                    const isCurrentlyHidden = fileResults.style.display === 'none';
+                    
+                    // 파일이 보여질 예정이고, 내용이 아직 없으면 로드
+                    if (isCurrentlyHidden && fileResults.innerHTML.trim() === '') {
+                        console.log('📥 파일 결과 로드 중...');
+                        const jobId = jobItem?.dataset.jobId;
+                        console.log(`📌 jobId=${jobId}`);
+                        if (jobId) {
+                            try {
+                                const response = await fetch(`/process/batch/status/${jobId}`);
+                                if (!response.ok) {
+                                    throw new Error(`API 응답 실패: ${response.status}`);
+                                }
+                                const fullJob = await response.json();
+                                console.log('📦 API 응답:', { jobId: fullJob.job_id, resultsLength: fullJob.results?.length, status: fullJob.status });
+                                
+                                if (fullJob.results && Array.isArray(fullJob.results) && fullJob.results.length > 0) {
+                                    fileResults.innerHTML = this.renderFileResults(fullJob);
+                                    console.log(`✅ 파일 결과 로드 완료: ${fullJob.results.length}개`);
+                                } else {
+                                    fileResults.innerHTML = '<p class="empty-state">처리 결과가 없습니다</p>';
+                                    console.log('⚠️ 결과가 없음');
+                                }
+                            } catch (error) {
+                                console.error('❌ 파일 결과 로드 실패:', error);
+                                fileResults.innerHTML = `<p class="empty-state">결과 로드 실패: ${error.message}</p>`;
+                            }
+                        }
+                    }
+                    
+                    // display 토글
+                    fileResults.style.display = isCurrentlyHidden ? 'block' : 'none';
+                    // expanded 클래스 토글
+                    btn.classList.toggle('expanded', isCurrentlyHidden);
+                    // 텍스트 업데이트
+                    const textNode = btn.childNodes[btn.childNodes.length - 1];
+                    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                        textNode.textContent = isCurrentlyHidden ? ' 파일 목록 숨기기' : ' 파일 목록 보기';
+                    }
                 }
             });
         });
 
-        // 상세보기 버튼 이벤트
-        document.querySelectorAll('.view-details-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
+        // 상세보기 버튼 이벤트 (Event Delegation)
+        const jobsList = document.getElementById('jobs-list');
+        if (jobsList) {
+            console.log('📌 상세보기 버튼 이벤트 위임 등록됨 (#jobs-list)');
+            jobsList.addEventListener('click', async (e) => {
+                const btn = e.target.closest('.view-details-btn');
+                if (!btn) return;
+                
                 e.stopPropagation();
                 const fileIndex = parseInt(btn.dataset.fileIndex);
                 const jobItem = btn.closest('.job-item');
@@ -649,10 +785,13 @@ class App {
                     this.showDetailModal(window.currentJob, fileIndex);
                 }
             });
-        });
+        }
 
         // 작업 다운로드 버튼 이벤트
-        document.querySelectorAll('.job-download-btn').forEach(btn => {
+        const downloadBtns = document.querySelectorAll('.job-download-btn');
+        console.log(`📌 다운로드 버튼 감지됨: ${downloadBtns.length}개`);
+        
+        downloadBtns.forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const jobId = btn.dataset.jobId;
@@ -689,11 +828,7 @@ class App {
                 <div class="job-header">
                     <div class="job-header-info">
                         <div class="job-id">작업 ID: ${(job.job_id || job.id || '').substring(0, 8)}...</div>
-                        <div class="job-meta">
-                            생성: ${createdDate} | 
-                            범위: ${job.date_range || `${job.start_date} ~ ${job.end_date}` || '-'} |
-                            상태: <span class="badge">${this.getStatusText(statusText)}</span>
-                        </div>
+                        <div class="job-meta">생성: ${createdDate} | 범위: ${job.date_range || `${job.start_date} ~ ${job.end_date}` || '-'} | 상태: <span class="badge">${this.getStatusText(statusText)}</span></div>
                     </div>
                     <div class="job-stats">
                         <div class="job-stat">
@@ -712,18 +847,15 @@ class App {
                             <span class="job-stat-label">총 누락:</span>
                             <span class="job-stat-value">${totalOmissions}</span>
                         </div>
-                    </div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <button class="job-download-btn" data-job-id="${job.job_id || job.id}" style="padding: 8px 14px; font-size: 0.9em; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.2s;">
-                            다운로드
-                        </button>
-                        <button class="job-toggle" style="padding: 8px 14px; font-size: 0.9em; background: #e5e7eb; color: #333; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.2s;">
-                            파일 목록 보기
-                        </button>
+                        <div style="display: flex; gap: 12px; align-items: center; margin-left: auto;">
+                            <button class="job-download-btn" data-job-id="${job.job_id || job.id}" style="padding: 8px 14px; font-size: 0.9em; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.2s;">
+                                다운로드
+                            </button>
+                            <button class="job-toggle"> 파일 목록 보기</button>
+                        </div>
                     </div>
                 </div>
                 <div class="file-results" style="display: none;">
-                    ${this.renderFileResults(job)}
                 </div>
             </div>
         `;
@@ -734,23 +866,41 @@ class App {
             return '<p class="empty-state">처리 결과가 없습니다</p>';
         }
 
-        return job.results.map((result, index) => `
+        return job.results.map((result, index) => {
+            // detected_issues 처리 (배열 또는 JSON 문자열 모두 지원)
+            let detectedCount = 0;
+            if (result.detected_issues) {
+                if (typeof result.detected_issues === 'string') {
+                    try {
+                        const parsed = JSON.parse(result.detected_issues);
+                        detectedCount = Array.isArray(parsed) ? parsed.length : 0;
+                    } catch {
+                        detectedCount = 0;
+                    }
+                } else if (Array.isArray(result.detected_issues)) {
+                    detectedCount = result.detected_issues.length;
+                }
+            }
+            
+            const statusText = result.success ? '성공' : '실패';
+            const statusDetail = detectedCount > 0 ? `누락: ${detectedCount}건` : (result.success ? '완료' : (result.error_message || '처리 실패'));
+            
+            return `
             <div class="file-result-item ${result.success ? 'success' : 'error'}">
                 <div class="file-result-info">
                     <div class="file-result-name">${result.filename || `파일 #${index + 1}`}</div>
                     <div class="file-result-meta">
-                        날짜: ${result.date} | 
-                        ${result.detected_issues ? `누락: ${result.detected_issues.length}건` : result.success ? '완료' : result.error || '처리 실패'}
+                        날짜: ${result.date || result.file_date || '-'} | ${statusDetail}
                     </div>
                 </div>
                 <div class="file-result-action">
                     <span class="file-result-badge ${result.success ? 'success' : 'error'}">
-                        ${result.success ? '성공' : '실패'}
+                        ${statusText}
                     </span>
                     <button class="view-details-btn" data-file-index="${index}">상세보기</button>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
 
     showDetailModal(job, fileIndex) {
@@ -1339,8 +1489,9 @@ class App {
         }
         
         // 버튼 텍스트를 "수행하기"로 설정 (고정)
-        if (startButton) {
-            startButton.textContent = '수행하기';
+        const startBtn = document.getElementById('start-processing-btn');
+        if (startBtn) {
+            startBtn.textContent = '수행하기';
         }
         
         // 결과 컨테이너 표시
@@ -1362,6 +1513,28 @@ class App {
         if (!selectedRange) {
             console.warn('⚠️ 선택한 범위 없음');
             alert('날짜 범위를 선택해주세요');
+            return;
+        }
+        
+        // "이전 기록 보기" 옵션인 경우 특별 처리
+        if (selectedOption.value === 'view_history') {
+            console.log('📋 이전 기록 보기 선택:', selectedRange);
+            
+            // 필터링 정보를 전역 변수에 저장
+            window.historyFilter = {
+                start_date: selectedRange.start.replace(/-/g, ''),
+                end_date: selectedRange.end.replace(/-/g, ''),
+                status: ''  // 모든 상태
+            };
+            
+            // UI 초기화
+            this.resetBatchUI();
+            
+            // 이력 페이지로 이동 (배치 처리 없음)
+            setTimeout(() => {
+                this.switchPage('history');
+                this.loadJobHistory(window.historyFilter.start_date, window.historyFilter.end_date);
+            }, 500);
             return;
         }
         
