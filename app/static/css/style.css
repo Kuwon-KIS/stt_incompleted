@@ -160,6 +160,39 @@ body {
     margin: 0.5rem 0;
 }
 
+/* Deployment Status */
+.deployment-status {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.deployment-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+}
+
+.deployment-label {
+    font-weight: 600;
+    color: #555;
+    min-width: 120px;
+}
+
+.status-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    background: #f3f4f6;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+}
+
 /* Recent Jobs */
 .recent-jobs {
     max-height: 300px;

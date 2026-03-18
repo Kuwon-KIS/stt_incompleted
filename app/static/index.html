@@ -40,6 +40,24 @@
                             <div>업타임: <span id="uptime">계산 중...</span></div>
                             <div>환경: <span id="env">계산 중...</span></div>
                         </div>
+                        
+                        <!-- Deployment Status -->
+                        <div class="deployment-status" id="deployment-status" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                            <div class="deployment-item">
+                                <span class="deployment-label">SFTP 서버:</span>
+                                <span class="status-badge" id="sftp-status">
+                                    <span class="status-dot" style="background: #999;"></span>
+                                    <span>확인 중...</span>
+                                </span>
+                            </div>
+                            <div class="deployment-item">
+                                <span class="deployment-label">Agent API:</span>
+                                <span class="status-badge" id="agent-status">
+                                    <span class="status-dot" style="background: #999;"></span>
+                                    <span>확인 중...</span>
+                                </span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Recent Jobs -->

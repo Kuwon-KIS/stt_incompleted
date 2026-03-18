@@ -217,13 +217,25 @@ class App {
 
     async refreshStatus() {
         try {
-            const response = await fetch('/healthz');
-            if (!response.ok) {
-                throw new Error(`Health check failed: ${response.status}`);
+            // Get basic health status
+            const healthResponse = await fetch('/healthz');
+            if (!healthResponse.ok) {
+                throw new Error(`Health check failed: ${healthResponse.status}`);
             }
             
-            const status = await response.json();
+            const status = await healthResponse.json();
             this.updateStatusDisplay(status);
+            
+            // Get detailed system status (SFTP, Agent connections)
+            try {
+                const systemResponse = await fetch('/api/system-status');
+                if (systemResponse.ok) {
+                    const systemStatus = await systemResponse.json();
+                    this.updateDeploymentStatus(systemStatus);
+                }
+            } catch (error) {
+                console.warn('시스템 상태 조회 실패 (비필수):', error);
+            }
         } catch (error) {
             console.error('상태 조회 실패:', error);
             const statusText = document.getElementById('status-text');
@@ -263,6 +275,65 @@ class App {
         // Load date statistics and recent jobs
         this.loadDateStatistics();
         this.loadRecentJobs();
+    }
+
+    updateDeploymentStatus(systemStatus) {
+        // SFTP Status
+        const sftp = systemStatus.deployment?.sftp;
+        if (sftp) {
+            const sftpElement = document.getElementById('sftp-status');
+            if (sftpElement) {
+                let statusColor, statusText;
+                if (sftp.status === 'mock') {
+                    statusColor = '#8b5cf6';  // Purple for mock
+                    statusText = '모의 모드';
+                } else if (sftp.connected) {
+                    statusColor = '#10b981';  // Green
+                    statusText = '연결됨';
+                } else {
+                    statusColor = '#ef4444';  // Red
+                    statusText = '연결 안 됨';
+                }
+                
+                let tooltip = `${sftp.host}`;
+                if (sftp.port) tooltip += `:${sftp.port}`;
+                if (sftp.error) tooltip += ` - ${sftp.error}`;
+                if (sftp.message) tooltip += ` (${sftp.message})`;
+                
+                sftpElement.innerHTML = `
+                    <span class="status-dot" style="background: ${statusColor};"></span>
+                    <span title="${tooltip}">${statusText}</span>
+                `;
+            }
+        }
+
+        // Agent Status
+        const agent = systemStatus.deployment?.agent;
+        if (agent) {
+            const agentElement = document.getElementById('agent-status');
+            if (agentElement) {
+                let statusColor, statusText;
+                if (agent.status === 'mock') {
+                    statusColor = '#8b5cf6';  // Purple for mock
+                    statusText = '모의 모드';
+                } else if (agent.connected) {
+                    statusColor = '#10b981';  // Green
+                    statusText = '연결됨';
+                } else {
+                    statusColor = '#ef4444';  // Red
+                    statusText = '연결 안 됨';
+                }
+                
+                let tooltip = `${agent.url}`;
+                if (agent.error) tooltip += ` - ${agent.error}`;
+                if (agent.message) tooltip += ` (${agent.message})`;
+                
+                agentElement.innerHTML = `
+                    <span class="status-dot" style="background: ${statusColor};"></span>
+                    <span title="${tooltip}">${statusText}</span>
+                `;
+            }
+        }
     }
 
     async loadDateStatistics() {
