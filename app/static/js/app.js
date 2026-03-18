@@ -1572,8 +1572,55 @@ class App {
             startBtn.textContent = '수행하기';
         }
         
+        // 날짜별 파일 개수 및 상태 테이블 업데이트 (배치 분석 결과 활용)
+        this.updateDateDetailsTable(result);
+        
         // 결과 컨테이너 표시
         resultContainer.style.display = 'block';
+    }
+
+    /**
+     * 배치 분석 결과를 기반으로 날짜별 파일 개수 및 상태 테이블 업데이트
+     */
+    updateDateDetailsTable(analysisResult) {
+        const tbody = document.getElementById('date-details-tbody');
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        
+        // 모든 날짜 수집 (완료된 날짜 + 새로운 날짜)
+        const allDates = [...new Set([...analysisResult.overlap_dates, ...analysisResult.new_dates])].sort();
+        
+        allDates.forEach(dateStr => {
+            const row = document.createElement('tr');
+            const dateDisplay = this.formatDateString(dateStr); // YYYYMMDD → 유저 친화적 포맷
+            
+            // 파일 개수 (API 응답의 files_per_date 또는 0)
+            const fileCount = analysisResult.files_per_date?.[dateStr] || 0;
+            
+            // 상태 결정: 완료됨 vs 대기
+            const isCompleted = analysisResult.overlap_dates.includes(dateStr);
+            const status = isCompleted ? '완료' : '대기';
+            const statusColor = isCompleted ? '#10b981' : '#3b82f6'; // 초록 vs 파랑
+            
+            row.innerHTML = `
+                <td style="padding: 8px; border-bottom: 1px solid #f0f0f0;">${dateDisplay}</td>
+                <td style="padding: 8px; text-align: center; border-bottom: 1px solid #f0f0f0;">${fileCount}개</td>
+                <td style="padding: 8px; text-align: center; border-bottom: 1px solid #f0f0f0;">
+                    <span style="background-color: ${statusColor}; color: white; padding: 3px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 500;">${status}</span>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    /**
+     * YYYYMMDD 형식의 날짜를 사용자 친화적 포맷으로 변환
+     * 예: 20260315 → 2026-03-15
+     */
+    formatDateString(dateStr) {
+        if (!dateStr || dateStr.length !== 8) return dateStr;
+        return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
     }
 
     /**
