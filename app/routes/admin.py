@@ -385,7 +385,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
                         pkey=config.SFTP_KEY
                     )
                     available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH)
-                    client.close()
+                    # Keep client open for file counting in Step 4
                 except Exception as e:
                     logger.warning(f"SFTP failed: {e}")
                     if config.TEST_MODE:
@@ -427,19 +427,26 @@ async def analyze_batch(req: BatchAnalysisRequest):
         files_per_date = {}
         total_files_to_process = 0
         
-        if analysis.new_dates:
-            try:
-                # Reuse SFTP client if possible, or create new one
-                has_client = 'client' in locals() and client
-                if not has_client and config.APP_ENV != "local":
-                    logger.info(f"[BATCH_ANALYSIS] Creating new SFTP client to count files")
-                    client = create_sftp_client(
-                        host=config.SFTP_HOST,
-                        port=config.SFTP_PORT,
-                        username=config.SFTP_USERNAME,
-                        password=config.SFTP_PASSWORD,
-                        pkey=config.SFTP_KEY
-                    )
+        try:
+            if analysis.new_dates:
+                # Ensure SFTP client is available
+                if 'client' not in locals() or not client:
+                    if config.APP_ENV == "local":
+                        from app.sftp_client import MockSFTPClient
+                        client = MockSFTPClient(
+                            host=config.SFTP_HOST or "mock",
+                            username=config.SFTP_USERNAME,
+                            password=config.SFTP_PASSWORD
+                        )
+                    else:
+                        logger.info(f"[BATCH_ANALYSIS] Creating new SFTP client to count files")
+                        client = create_sftp_client(
+                            host=config.SFTP_HOST,
+                            port=config.SFTP_PORT,
+                            username=config.SFTP_USERNAME,
+                            password=config.SFTP_PASSWORD,
+                            pkey=config.SFTP_KEY
+                        )
                 
                 for date_str in analysis.new_dates:
                     try:
@@ -447,20 +454,8 @@ async def analyze_batch(req: BatchAnalysisRequest):
                         date_path = f"{root_path}/{date_str}"
                         logger.info(f"[BATCH_ANALYSIS] Counting files for date {date_str}, path: {date_path}")
                         
-                        if config.APP_ENV == "local":
-                            # Mock client
-                            from app.sftp_client import MockSFTPClient
-                            mock_client = MockSFTPClient(
-                                host=config.SFTP_HOST or "mock",
-                                username=config.SFTP_USERNAME,
-                                password=config.SFTP_PASSWORD
-                            )
-                            files = mock_client.list_files(path=date_path, suffix=".txt")
-                            logger.info(f"[BATCH_ANALYSIS] Mock list_files returned: {files}")
-                        else:
-                            logger.debug(f"[BATCH_ANALYSIS] Calling SFTP list_files for: {date_path}")
-                            files = client.list_files(path=date_path, suffix=".txt")
-                            logger.info(f"[BATCH_ANALYSIS] SFTP list_files returned {len(files) if files else 0} files: {files}")
+                        files = client.list_files(path=date_path, suffix=".txt")
+                        logger.info(f"[BATCH_ANALYSIS] SFTP list_files returned {len(files) if files else 0} files: {files}")
                         
                         file_count = len(files) if files else 0
                         files_per_date[date_str] = file_count
@@ -469,12 +464,14 @@ async def analyze_batch(req: BatchAnalysisRequest):
                     except Exception as e:
                         logger.error(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {e}", exc_info=True)
                         files_per_date[date_str] = 0
-                
-                if 'client' in locals() and client and config.APP_ENV != "local":
+        finally:
+            # Always close SFTP client if it exists and is not local
+            if 'client' in locals() and client and config.APP_ENV != "local":
+                try:
                     logger.info(f"[BATCH_ANALYSIS] Closing SFTP client")
                     client.close()
-            except Exception as e:
-                logger.error(f"[BATCH_ANALYSIS] Error counting files: {e}", exc_info=True)
+                except Exception as e:
+                    logger.warning(f"[BATCH_ANALYSIS] Error closing SFTP client: {e}")
         
         # Step 5: Convert to response format
         response_options = [
