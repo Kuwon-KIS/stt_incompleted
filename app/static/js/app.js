@@ -6,6 +6,7 @@ class App {
     constructor() {
         this.currentPage = 'dashboard';
         this.statusCheckInterval = null;
+        this.autoAnalysisDebounceTimer = null;  // Auto-analysis debounce timer
         this.init();
     }
 
@@ -1459,6 +1460,9 @@ class App {
             // 선택 정보 카드 업데이트
             const summary = this.calculateSelectionSummary(startDate, endDate);
             this.updateSelectionCard(summary);
+            
+            // Auto-analysis: trigger batch analysis after debounce delay
+            this.scheduleAutoAnalysis();
         } else if (selectedDates.length === 0) {
             // 선택 해제
             window.selectedDateRange = null;
@@ -1469,6 +1473,24 @@ class App {
             // 입력 필드 초기화
             this.clearDateInputs();
         }
+    }
+
+    /**
+     * Schedule auto-analysis with debounce (500ms delay)
+     * This prevents excessive API calls when user is still selecting dates
+     */
+    scheduleAutoAnalysis() {
+        // Cancel previous timer
+        if (this.autoAnalysisDebounceTimer) {
+            clearTimeout(this.autoAnalysisDebounceTimer);
+        }
+        
+        // Set new timer - delay 500ms to allow user to finish selecting
+        this.autoAnalysisDebounceTimer = setTimeout(() => {
+            console.log('⏰ Auto-triggering batch analysis...');
+            this.analyzeBatchRange();
+            this.autoAnalysisDebounceTimer = null;
+        }, 500);
     }
 
     /**
