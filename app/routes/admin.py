@@ -76,6 +76,8 @@ class BatchAnalysisResponse(BaseModel):
     overlap_dates: List[str]  # Dates that are already completed
     new_dates: List[str]      # Dates that are not yet processed
     options: List[BatchAnalysisOption]  # Processing options for this case
+    total_files_to_process: int = 0  # Total files in new_dates that will be processed
+    files_per_date: Dict[str, int] = {}  # File count per date
 
 
 class MessageResponse(BaseModel):
@@ -421,7 +423,54 @@ async def analyze_batch(req: BatchAnalysisRequest):
             completed_dates=completed_dates
         )
         
-        # Step 4: Convert to response format
+        # Step 4: Count files in new dates (for UI display)
+        files_per_date = {}
+        total_files_to_process = 0
+        
+        if analysis.new_dates:
+            try:
+                # Reuse SFTP client if possible, or create new one
+                has_client = 'client' in locals() and client
+                if not has_client and config.APP_ENV != "local":
+                    client = create_sftp_client(
+                        host=config.SFTP_HOST,
+                        port=config.SFTP_PORT,
+                        username=config.SFTP_USERNAME,
+                        password=config.SFTP_PASSWORD,
+                        pkey=config.SFTP_KEY
+                    )
+                
+                for date_str in analysis.new_dates:
+                    try:
+                        root_path = config.SFTP_ROOT_PATH.rstrip('/')
+                        date_path = f"{root_path}/{date_str}"
+                        
+                        if config.APP_ENV == "local":
+                            # Mock client
+                            from app.sftp_client import MockSFTPClient
+                            mock_client = MockSFTPClient(
+                                host=config.SFTP_HOST or "mock",
+                                username=config.SFTP_USERNAME,
+                                password=config.SFTP_PASSWORD
+                            )
+                            files = mock_client.list_files(path=date_path, suffix=".txt")
+                        else:
+                            files = client.list_files(path=date_path, suffix=".txt")
+                        
+                        file_count = len(files) if files else 0
+                        files_per_date[date_str] = file_count
+                        total_files_to_process += file_count
+                        logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files")
+                    except Exception as e:
+                        logger.warning(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {e}")
+                        files_per_date[date_str] = 0
+                
+                if 'client' in locals() and client and config.APP_ENV != "local":
+                    client.close()
+            except Exception as e:
+                logger.warning(f"[BATCH_ANALYSIS] Error counting files: {e}")
+        
+        # Step 5: Convert to response format
         response_options = [
             BatchAnalysisOption(
                 option_id=opt.option_id,
@@ -438,7 +487,9 @@ async def analyze_batch(req: BatchAnalysisRequest):
             completed_range=analysis.completed_range,
             overlap_dates=analysis.overlap_dates,
             new_dates=analysis.new_dates,
-            options=response_options
+            options=response_options,
+            total_files_to_process=total_files_to_process,
+            files_per_date=files_per_date
         )
         
     except HTTPException:
