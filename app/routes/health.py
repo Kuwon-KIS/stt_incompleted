@@ -122,8 +122,8 @@ async def check_agent_connection() -> dict:
                 "error": "AGENT_URL not configured"
             }
         
-        # LOCAL environment uses Mock Agent - mark as mock mode
-        if config.APP_ENV == "local":
+        # Mock Agent (local or dev with /mock/agent path)
+        if "/mock/agent" in config.AGENT_URL.lower() or config.APP_ENV == "local":
             return {
                 "connected": True,
                 "status": "mock",

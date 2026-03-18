@@ -98,6 +98,13 @@ app.include_router(templates.router)
 logger.info("STT Processing System initialized (ENV=%s)", config.APP_ENV)
 
 # Mock endpoints for local development
+@app.get("/mock/agent")
+async def mock_agent_health():
+    """Health check endpoint for mock agent."""
+    logger.debug("Mock agent health check")
+    return {"status": "ok", "message": "Mock Agent is running"}
+
+
 @app.post("/mock/agent/{agent_name}/messages")
 async def mock_agent_endpoint(agent_name: str, payload: Dict[str, Any]):
     """Mock AI Agent endpoint for local testing.
