@@ -21,13 +21,14 @@ class MockSFTPClient:
         self.host = host
         self.port = port
         self.username = username
-        # Generate dummy date directories: today, yesterday, day before yesterday
+        # Generate dummy date directories: last 7 days (for testing different scenarios)
         today = datetime.now()
         self.mock_dates = [
-            (today - timedelta(days=2)).strftime("%Y%m%d"),
-            (today - timedelta(days=1)).strftime("%Y%m%d"),
-            today.strftime("%Y%m%d"),
+            (today - timedelta(days=i)).strftime("%Y%m%d")
+            for i in range(7, 0, -1)  # 7 days ago to yesterday
         ]
+        # Only mark first 3 as completed in DB (for testing partial/no overlap cases)
+        self.mock_completed_dates = self.mock_dates[:3]
         # Sample files for each date (file names are timestamps with .txt extension)
         self.mock_files = {
             date: [

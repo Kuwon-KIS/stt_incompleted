@@ -112,9 +112,9 @@ def analyze_batch_case(
         logger.warning(f"Case: no_data - no available dates in range")
         
     elif len(overlap_dates) == 0:
-        # Case 3: No overlap
+        # Case 3: No overlap - all new dates to process
         case = "no_overlap"
-        options = []  # Auto-process, no options needed
+        options = _generate_no_overlap_options(new_dates, user_range)
         logger.info(f"Case: no_overlap - {len(new_dates)} new dates to process")
         
     elif len(overlap_dates) == len(user_dates):
@@ -240,6 +240,34 @@ def _generate_partial_overlap_options(new_dates: List[str], user_range: Dict[str
                 "start_date": user_range["start_date"],
                 "end_date": user_range["end_date"],
                 "force": True
+            }
+        )
+    ]
+    return options
+
+
+def _generate_no_overlap_options(new_dates: List[str], user_range: Dict[str, str]) -> List[BatchAnalysisOption]:
+    """Generate options for no_overlap case (all dates are new, no completed dates).
+    
+    Args:
+        new_dates: List of dates that need to be processed
+        user_range: User selected date range
+        
+    Returns:
+        List of processing options for new dates
+    """
+    new_date_count = len(new_dates)
+    new_dates_str = f"{min(new_dates)}~{max(new_dates)}" if new_dates else "없음"
+    
+    options = [
+        BatchAnalysisOption(
+            option_id="process_new",
+            label="새로운 데이터 처리",
+            description=f"선택한 범위의 모든 파일을 처리합니다 ({new_date_count}일: {new_dates_str})",
+            action_config={
+                "type": "process_new",
+                "start_date": user_range["start_date"],
+                "end_date": user_range["end_date"]
             }
         )
     ]
