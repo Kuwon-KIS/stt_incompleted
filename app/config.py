@@ -58,7 +58,7 @@ class Config:
     SFTP_ROOT_PATH = os.getenv("SFTP_ROOT_PATH", "/")
     
     # LLM settings
-    CALL_TYPE = os.getenv("CALL_TYPE", "vllm")
+    CALL_TYPE = os.getenv("CALL_TYPE", "agent")
     LLM_URL = os.getenv("LLM_URL")
     LLM_AUTH_HEADER = os.getenv("LLM_AUTH_HEADER")
     MODEL_PATH = os.getenv("MODEL_PATH")
