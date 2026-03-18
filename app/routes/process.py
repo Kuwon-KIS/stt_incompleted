@@ -405,7 +405,11 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 
                                 # AI 처리 (vLLM 또는 Agent)
                                 detector = get_detector(config.CALL_TYPE, config)
-                                ai_result = detector.detect(content)
+                                # Default prompt for batch processing
+                                default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
+                                ai_result = asyncio.run(detector.detect(content, default_prompt))
+                                default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
+                                ai_result = asyncio.run(detector.detect(content, default_prompt))
                                 
                                 # 결과 변환
                                 now = datetime.now(timezone.utc)
