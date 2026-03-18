@@ -404,7 +404,7 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 content = sftp_client.read_file(file_path)
                                 
                                 # AI 처리 (vLLM 또는 Agent)
-                                detector = get_detector(config.CALL_TYPE)
+                                detector = get_detector(config.CALL_TYPE, config)
                                 ai_result = detector.detect(content)
                                 
                                 # 결과 변환
