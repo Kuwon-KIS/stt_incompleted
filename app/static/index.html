@@ -52,7 +52,12 @@
                             </div>
                             <div class="deployment-item">
                                 <span class="deployment-label">Agent API:
-                                    <span class="info-icon" id="agent-info-icon" title="클릭하여 엔드포인트 확인" style="cursor: help; color: #666; margin-left: 4px;">ⓘ</span>
+                                    <span class="info-icon" id="agent-info-icon" data-tooltip="" style="cursor: help; color: #666; margin-left: 4px; position: relative;">ⓘ
+                                        <div class="custom-tooltip" id="agent-tooltip" style="display: none; position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 12px; border-radius: 4px; font-size: 0.85em; white-space: nowrap; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+                                            <span id="agent-tooltip-text">엔드포인트 로딩중...</span>
+                                            <div style="position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #333;"></div>
+                                        </div>
+                                    </span>
                                 </span>
                                 <span class="status-badge" id="agent-status">
                                     <span class="status-dot" style="background: #999;"></span>

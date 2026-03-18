@@ -178,6 +178,17 @@ class App {
                 }
             });
         }
+
+        // Agent API Info Icon Hover Tooltip
+        const agentInfoIcon = document.getElementById('agent-info-icon');
+        if (agentInfoIcon) {
+            agentInfoIcon.addEventListener('mouseenter', () => {
+                this.showAgentTooltip();
+            });
+            agentInfoIcon.addEventListener('mouseleave', () => {
+                this.hideAgentTooltip();
+            });
+        }
     }
 
     // ===== Page Navigation =====
@@ -337,9 +348,30 @@ class App {
                 
                 // Update info icon tooltip with endpoint URL
                 if (agentInfoIcon && agent.url) {
-                    agentInfoIcon.title = `엔드포인트: ${agent.url}`;
+                    agentInfoIcon.dataset.tooltip = `엔드포인트: ${agent.url}`;
                 }
             }
+        }
+    }
+
+    showAgentTooltip() {
+        const tooltip = document.getElementById('agent-tooltip');
+        const tooltipText = document.getElementById('agent-tooltip-text');
+        const agentInfoIcon = document.getElementById('agent-info-icon');
+        
+        if (tooltip && agentInfoIcon) {
+            const tooltipContent = agentInfoIcon.dataset.tooltip || '엔드포인트 정보 없음';
+            if (tooltipText) {
+                tooltipText.textContent = tooltipContent;
+            }
+            tooltip.style.display = 'block';
+        }
+    }
+
+    hideAgentTooltip() {
+        const tooltip = document.getElementById('agent-tooltip');
+        if (tooltip) {
+            tooltip.style.display = 'none';
         }
     }
 
