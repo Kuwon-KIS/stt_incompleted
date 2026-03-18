@@ -5,23 +5,70 @@
 - **Agent**: Mock API (로컬 localhost:8002)
 - **목적**: Dev 환경에서 통합 테스트
 
+## 전제 조건
+
+### Build 서버 내부에서 실행 (권장)
+
+Build 서버 내에서 직접 App을 실행하고 로컬 SFTP 서버에 접속하는 방식입니다.
+
+**필요 사항:**
+- Build 서버 내 SSH/SFTP 서버 실행 중
+- 로컬호스트 (localhost 또는 127.0.0.1) 포트 22에서 수신
+
+**확인 방법:**
+```bash
+# Build 서버 내에서
+ssh localhost
+# 또는
+sftp localhost
+```
+
 ## 환경 설정
 
-### 로컬 Mock Agent API 사용 방법
+### 1️⃣ Build 서버 내 .env.dev 설정
 
-`.env.dev` 파일의 `AGENT_URL` 수정:
+Build 서버 내에서 실행할 때의 `.env.dev` 파일:
+
 ```bash
-# 변경 전 (실제 Agent 서버)
-AGENT_URL=https://agent-dev.internal:9000/v1/analyze
+# Build 서버 내부 로컬 SFTP 서버
+SFTP_HOST=localhost
+SFTP_PORT=22
+SFTP_USERNAME=sftpuser
+SFTP_PASSWORD={{password}}
+SFTP_KEY=
+SFTP_ROOT_PATH=/uploads/recstt
 
-# 변경 후 (로컬 Mock API 사용)
+# Mock Agent API 사용
 AGENT_URL=http://localhost:8002/mock/agent
+AGENT_NAME=dev-test-agent
 ```
 
-그 후 app 실행:
+### 2️⃣ SSH 데몬 확인 (Build 서버)
+
 ```bash
-APP_ENV=dev python -m uvicorn app.main:app --host 127.0.0.1 --port 8002
+# SSH 서비스 상태 확인
+sudo systemctl status ssh
+# 또는
+sudo service ssh status
+
+# SSH 서비스 시작 (필요시)
+sudo systemctl start ssh
+# 또는
+sudo service ssh start
+
+# SFTP 접근 테스트
+sftp sftpuser@localhost
 ```
+
+### 3️⃣ App 서버 실행 (Build 서버 내)
+
+```bash
+APP_ENV=dev python -m uvicorn app.main:app --host 0.0.0.0 --port 8002
+```
+
+**포트 설명:**
+- `--host 0.0.0.0`: 모든 네트워크 인터페이스에서 수신 (필요시 localhost로 변경)
+- `--port 8002`: App 서버 포트
 
 ## API 입/출력 형식
 
@@ -138,15 +185,43 @@ curl -X POST http://localhost:8002/process \
 
 ## 테스트 설정 옵션
 
-Dev 환경에서 다양한 조합으로 테스트할 수 있습니다:
+### 테스트 환경별 설정
 
-| 구성 | SFTP | Agent | 사용 시나리오 |
-|------|------|-------|------------|
-| `.env.dev` (기본) | Build 서버 | 실제 Agent | 완전 통합 테스트 (실제 환경) |
-| `.env.dev` + localhost | Build 서버 | Mock API (localhost) | SFTP는 실제, Agent 개발/테스트 |
-| `.env.local` | Mock | Mock API | 로컬 완전 단독 테스트 |
+| 환경 | 위치 | SFTP | Agent | 사용 시나리오 |
+|------|------|------|-------|------------|
+| **Build 내부** | Build 서버 내부 | localhost:22 | Mock (localhost:8002) | ✅ 권장 (네트워크 제약 없음) |
+| **로컬 개발** | 로컬 Mac | Mock 데이터 | Mock (localhost:8002) | 완전 단독 (slow network) |
 
-**Mock Agent API를 사용하려면**: `.env.dev` 파일에서 `AGENT_URL=http://localhost:8002/mock/agent` 로 설정
+### 1️⃣ Build 서버 내부 (권장) - 현재 설정
+
+```bash
+# Build 서버에서 직접 실행
+SFTP_HOST=localhost        # Build 서버 내부 SFTP
+SFTP_PORT=22
+AGENT_URL=http://localhost:8002/mock/agent  # Mock Agent
+APP_ENV=dev
+```
+
+**장점:**
+- 실제 SFTP 파일 처리 가능
+- 네트워크 제약 없음
+- SFTP 및 Agent 모두 로컬 접근
+
+### 2️⃣ 로컬 완전 단독 (대체) - `.env.local` 사용
+
+```bash
+SFTP_HOST=localhost        # Mock SFTP
+SFTP_PORT=22
+AGENT_URL=http://localhost:8002/mock/agent  # Mock Agent
+APP_ENV=local
+```
+
+**장점:**
+- 로컬 Mac에서 완전히 독립적으로 테스트
+- 네트워크 불필요
+
+**단점:**
+- 실제 SFTP 파일 사용 불가
 
 ## Mock Agent API 응답 형식 검증 체크리스트
 

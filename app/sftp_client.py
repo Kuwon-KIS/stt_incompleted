@@ -1,5 +1,6 @@
 import logging
 import paramiko
+import stat
 from typing import List, Optional
 import io
 import base64
@@ -190,9 +191,9 @@ class SFTPClient:
                 full_path = f"{path}/{entry}".replace("//", "/")
                 try:
                     # Check if it's a file (not a directory)
-                    stat = self.sftp.stat(full_path)
+                    file_stat = self.sftp.stat(full_path)
                     # S_ISREG checks if it's a regular file
-                    if paramiko.stat.S_ISREG(stat.st_mode):
+                    if stat.S_ISREG(file_stat.st_mode):
                         if suffix is None or entry.endswith(suffix):
                             files.append(entry)
                 except IOError:
@@ -222,9 +223,9 @@ class SFTPClient:
             for entry in entries:
                 full_path = f"{path}/{entry}".replace("//", "/")
                 try:
-                    stat = self.sftp.stat(full_path)
+                    file_stat = self.sftp.stat(full_path)
                     # S_ISDIR checks if it's a directory
-                    if paramiko.stat.S_ISDIR(stat.st_mode):
+                    if stat.S_ISDIR(file_stat.st_mode):
                         directories.append(entry)
                 except IOError:
                     pass
