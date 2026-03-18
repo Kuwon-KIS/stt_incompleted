@@ -1495,8 +1495,8 @@ class App {
     }
 
     /**
-     * Fetch batch analysis data without displaying
-     * Used for auto-analysis to populate cache
+     * Fetch batch analysis data without displaying full results
+     * Used for auto-analysis to populate cache and update UI metadata
      */
     async fetchBatchAnalysisData() {
         const selectedRange = window.selectedDateRange;
@@ -1514,10 +1514,46 @@ class App {
             // 전역 변수 저장 (캐시)
             window.batchAnalysisResult = response;
             console.log('✨ 분석 데이터 캐시됨:', response);
+            
+            // Update selection card with file count data from API
+            this.updateSelectionCardFromAnalysis(response);
+            
+            // Update date details table with file counts
+            this.updateDateDetailsTable(response);
         } catch (error) {
             console.error('❌ 분석 데이터 조회 실패:', error);
             // 에러는 무시 - 사용자가 버튼을 누를 때 다시 시도
         }
+    }
+
+    /**
+     * Update selection-info-box with data from batch analysis API
+     * Shows file counts and date details without displaying analysis results
+     */
+    updateSelectionCardFromAnalysis(analysisResult) {
+        const card = document.getElementById('selection-info-card');
+        const dateCount = document.getElementById('stats-date-count');
+        const totalFiles = document.getElementById('stats-total-files');
+        
+        if (!card) return;
+        
+        // Calculate total dates and files
+        const allDates = [...new Set([...analysisResult.overlap_dates, ...analysisResult.new_dates])].sort();
+        const totalFileCount = analysisResult.total_files_to_process || 
+                              Object.values(analysisResult.files_per_date || {}).reduce((a, b) => a + b, 0);
+        
+        // Update counts
+        if (dateCount) {
+            dateCount.textContent = allDates.length;
+        }
+        if (totalFiles) {
+            totalFiles.textContent = totalFileCount;
+        }
+        
+        // Ensure card is visible
+        card.style.display = 'block';
+        
+        console.log(`✅ Selection card updated: ${allDates.length} dates, ${totalFileCount} files`);
     }
 
     /**
