@@ -426,7 +426,7 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 
                             except Exception as file_error:
                                 logger.warning("[BATCH_FILE_ERROR] Failed to process %s: %s", 
-                                             filename, str(file_error))
+                                             file_name, str(file_error))
                                 return None, False, str(file_error)
                         
                         # ThreadPoolExecutor로 파일들을 병렬 처리
@@ -454,7 +454,7 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                     date_files[date_str]["total"] += 1
                         
                         logger.info("[BATCH_PARALLEL_COMPLETE] Parallel processing complete for date %s: %d files", 
-                                   date_str, len(files))
+                                   date_str, len(file_names))
                         
                         current += timedelta(days=1)
                     
