@@ -407,9 +407,15 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 detector = get_detector(config.CALL_TYPE, config)
                                 # Default prompt for batch processing
                                 default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
-                                ai_result = asyncio.run(detector.detect(content, default_prompt))
-                                default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
-                                ai_result = asyncio.run(detector.detect(content, default_prompt))
+                                logger.info("[BATCH_FILE_DETECT] Calling detector for %s (call_type=%s)", file_name, config.CALL_TYPE)
+                                try:
+                                    ai_result = asyncio.run(detector.detect(content, default_prompt))
+                                    logger.info("[BATCH_FILE_DETECT_OK] Detector returned: category=%s, issues=%d", 
+                                               ai_result.get("category", "unknown"), 
+                                               len(ai_result.get("detected_issues", [])))
+                                except Exception as detect_error:
+                                    logger.error("[BATCH_FILE_DETECT_ERROR] Detector failed: %s", detect_error, exc_info=True)
+                                    raise
                                 
                                 # 결과 변환
                                 now = datetime.now(timezone.utc)
@@ -429,8 +435,8 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 return result_item, True, None
                                 
                             except Exception as file_error:
-                                logger.warning("[BATCH_FILE_ERROR] Failed to process %s: %s", 
-                                             file_name, str(file_error))
+                                logger.error("[BATCH_FILE_ERROR] Failed to process %s: %s", 
+                                             file_name, str(file_error), exc_info=True)
                                 return None, False, str(file_error)
                         
                         # ThreadPoolExecutor로 파일들을 병렬 처리
@@ -447,18 +453,21 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                 try:
                                     result_item, success, error = future.result()
                                     if success:
+                                        logger.info("[BATCH_RESULT_OK] File processed successfully: %s", result_item.get("filename"))
                                         real_results.append(result_item)
                                         date_files[date_str]["success"] += 1
                                     else:
+                                        logger.warning("[BATCH_RESULT_ERROR] File processing failed: %s", error)
                                         date_files[date_str]["failed"] += 1
                                     date_files[date_str]["total"] += 1
                                 except Exception as e:
-                                    logger.error("[BATCH_FUTURE_ERROR] Error retrieving file result: %s", e)
+                                    logger.error("[BATCH_FUTURE_ERROR] Error retrieving file result: %s", e, exc_info=True)
                                     date_files[date_str]["failed"] += 1
                                     date_files[date_str]["total"] += 1
                         
-                        logger.info("[BATCH_PARALLEL_COMPLETE] Parallel processing complete for date %s: %d files", 
-                                   date_str, len(file_names))
+                        logger.info("[BATCH_PARALLEL_COMPLETE] Parallel processing complete for date %s: total=%d, success=%d, failed=%d", 
+                                   date_str, date_files[date_str]["total"], 
+                                   date_files[date_str]["success"], date_files[date_str]["failed"])
                         
                         current += timedelta(days=1)
                     
@@ -467,7 +476,11 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                      date_path, str(dir_error))
                         current += timedelta(days=1)
                 
-                logger.info("[BATCH_REAL_RESULTS] Real mode processing complete: %d files", len(real_results))
+                logger.info("[BATCH_REAL_RESULTS] Real mode processing complete: total_results=%d files collected", len(real_results))
+                for idx, result in enumerate(real_results):
+                    logger.info("[BATCH_REAL_RESULT_%d] File: %s, Category: %s, Issues: %d", 
+                               idx, result.get("filename"), result.get("category"), 
+                               len(result.get("detected_issues", [])))
                 results = real_results
                 
                 # 4. 공통 DB 저장 로직 (아래에서 처리)
@@ -478,8 +491,9 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
         
         # ===== 공통 DB 저장 로직 (Local/Real 모드 모두) =====
         logger.info("[BATCH_DB_INSERT_START] Saving %d results to database", len(results))
-        for result_data in results:
+        for idx, result_data in enumerate(results):
             try:
+                logger.debug("[BATCH_DB_INSERT_DETAIL_%d] Processing result: %s", idx, result_data.get("filename"))
                 result = BatchResult(
                     job_id=job_id,
                     file_date=result_data["date"],
@@ -494,9 +508,10 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                     created_at=result_data.get("created_at", datetime.now(timezone.utc))
                 )
                 db.create_result(result)
+                logger.info("[BATCH_DB_INSERT_OK_%d] Saved result for %s", idx, result_data.get("filename"))
             except Exception as db_error:
                 logger.error("[BATCH_DB_ERROR] Failed to save result for %s: %s", 
-                           result_data.get("filename"), str(db_error))
+                           result_data.get("filename"), str(db_error), exc_info=True)
         logger.info("[BATCH_DB_INSERT_OK] Saved %d results to database", len(results))
         
         # 날짜별 상태 업데이트 (공통)
