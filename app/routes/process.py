@@ -7,11 +7,9 @@ import asyncio
 import time
 import os
 import uuid
-import threading
 import csv
 import io
 from datetime import datetime, timezone, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -30,9 +28,6 @@ router = APIRouter(prefix="/process", tags=["process"])
 
 # Initialize database manager
 db = DatabaseManager()
-
-# Thread pool for background tasks
-executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="batch-worker-")
 
 
 def determine_date_status(total_files: int, processed_files: int, failed_files: int) -> str:
@@ -211,10 +206,13 @@ async def process_single(req: ProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ===== Batch Processing =====
+# ===== Batch Processing - ASYNC ARCHITECTURE =====
 
-def run_batch_sync(job_id: str, req: BatchProcessRequest):
-    """Synchronous batch processing function that can be called from thread.
+async def run_batch_async(job_id: str, req: BatchProcessRequest):
+    """Async batch processing function.
+    
+    This is the core async function that handles batch processing with proper event loop architecture.
+    All file processing happens in a SINGLE event loop using asyncio.gather() for concurrency.
     
     Supports SELECT_TARGET case-based options:
     - option_id='reprocess': Force reprocess (force=true)
@@ -223,8 +221,8 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
     - option_id='reprocess_all': Reprocess all dates in range
     """
     logger.info("=" * 80)
-    logger.info("[BATCH_START] job_id=%s, date_range=%s~%s, option_id=%s, thread_id=%s", 
-                job_id, req.start_date, req.end_date, req.option_id, threading.current_thread().ident)
+    logger.info("[BATCH_ASYNC_START] job_id=%s, date_range=%s~%s, option_id=%s", 
+                job_id, req.start_date, req.end_date, req.option_id)
     
     try:
         # Step 1: Handle option_id for SELECT_TARGET feature
@@ -245,19 +243,16 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
         logger.info("[BATCH_STATUS_OK] Status updated successfully")
 
         results = []
+        date_files = {}
         
-        # APP_ENV=local이면 Mock 배치 처리 (병렬 처리)
+        # APP_ENV=local이면 Mock 배치 처리 (async 병렬 처리)
         if config.APP_ENV == "local":
-            logger.info("[BATCH_MODE] Mock mode: creating sample results with parallel processing...")
+            logger.info("[BATCH_MODE] Mock mode: creating sample results with async processing...")
             
             # 날짜 범위 내의 모든 날짜 생성
             current = datetime.strptime(req.start_date, "%Y%m%d")
             end = datetime.strptime(req.end_date, "%Y%m%d")
             
-            mock_results = []
-            date_files = {}  # 날짜별 파일 수 추적
-            
-            # 병렬 처리할 파일 목록 사전 생성
             files_to_process = []
             file_idx = 0
             
@@ -299,16 +294,18 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                 
                 current += timedelta(days=1)
             
-            # ThreadPoolExecutor로 Mock 파일들 병렬 처리
-            def process_mock_file(file_info):
-                """Mock 파일 처리 함수 (병렬 실행용)"""
+            # Async helper to process mock file
+            async def process_mock_file_async(file_info):
+                """Async mock 파일 처리 함수"""
                 try:
                     date_str = file_info["date"]
                     filename = file_info["filename"]
                     mock_issues = file_info["mock_issues"]
                     
-                    logger.debug("[BATCH_MOCK_FILE] Processing: %s (thread=%s)", 
-                               filename, threading.current_thread().ident)
+                    logger.debug("[BATCH_MOCK_FILE] Processing: %s", filename)
+                    
+                    # Simulate async processing delay
+                    await asyncio.sleep(0.1)
                     
                     now = datetime.now(timezone.utc)
                     result_item = {
@@ -325,41 +322,38 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                         "created_at": now
                     }
                     logger.debug("[BATCH_MOCK_OK] %s processed successfully", filename)
-                    return result_item, True
+                    return result_item, True, None
                     
                 except Exception as e:
-                    logger.warning("[BATCH_MOCK_ERROR] Failed to process mock file: %s", str(e))
-                    return None, False
+                    logger.error("[BATCH_MOCK_FILE_ERROR] Failed to process mock file: %s", str(e), exc_info=True)
+                    return None, False, str(e)
             
-            logger.info("[BATCH_MOCK_PARALLEL_START] Processing %d mock files in parallel", len(files_to_process))
+            # Process all mock files concurrently
+            logger.info("[BATCH_MOCK_ASYNC_START] Processing %d mock files concurrently", len(files_to_process))
             
-            with ThreadPoolExecutor(max_workers=5, thread_name_prefix=f"batch-mock-{job_id}-") as mock_executor:
-                mock_futures = [mock_executor.submit(process_mock_file, f) for f in files_to_process]
-                
-                # 모든 파일 처리 완료 대기
-                for future in as_completed(mock_futures):
-                    try:
-                        result_item, success = future.result()
-                        if success:
-                            mock_results.append(result_item)
-                            date_str = result_item["date"]
-                            date_files[date_str]["total"] += 1
-                            date_files[date_str]["success"] += 1
-                        else:
-                            logger.warning("[BATCH_MOCK_FAILED] Mock file processing failed")
-                    except Exception as e:
-                        logger.error("[BATCH_MOCK_FUTURE_ERROR] Error retrieving mock result: %s", e)
+            tasks = [process_mock_file_async(f) for f in files_to_process]
+            results_tuples = await asyncio.gather(*tasks, return_exceptions=False)
             
-            logger.info("[BATCH_MOCK_PARALLEL_COMPLETE] Mock parallel processing complete: %d files", len(mock_results))
-            results = mock_results
-            logger.info("[BATCH_MOCK_COMPLETE] Mock batch processing complete: %d files", len(results))
+            for result_item, success, error in results_tuples:
+                if success:
+                    results.append(result_item)
+                    date_str = result_item["date"]
+                    date_files[date_str]["total"] += 1
+                    date_files[date_str]["success"] += 1
+                    logger.info("[BATCH_MOCK_RESULT_OK] File processed: %s", result_item.get("filename"))
+                else:
+                    logger.warning("[BATCH_MOCK_RESULT_ERROR] Mock file processing failed: %s", error)
+                    # Still need to track this as a failure
+                    if result_item:
+                        date_files[result_item["date"]]["failed"] += 1
+                        date_files[result_item["date"]]["total"] += 1
+            
+            logger.info("[BATCH_MOCK_ASYNC_COMPLETE] Mock batch processing complete: %d files processed", len(results))
         else:
-            # Real batch processing - SFTP에서 파일 조회 및 AI 처리
-            logger.info("[BATCH_MODE] Real mode: reading from SFTP and processing with AI")
+            # Real batch processing - SFTP에서 파일 조회 및 AI 처리 (ASYNC VERSION)
+            logger.info("[BATCH_MODE] Real mode: reading from SFTP and processing with AI (async)")
             
             try:
-                from .sftp import SFTPClient
-                
                 # 1. SFTP 클라이언트 초기화
                 logger.info("[BATCH_SFTP_INIT] Initializing SFTP client: %s:%d", 
                            config.SFTP_HOST, config.SFTP_PORT)
@@ -372,10 +366,10 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                 )
                 
                 # 2. 날짜 범위별 파일 조회
-                real_results = []
-                date_files = {}
                 current = datetime.strptime(req.start_date, "%Y%m%d")
                 end = datetime.strptime(req.end_date, "%Y%m%d")
+                
+                files_to_process = []
                 
                 while current <= end:
                     date_str = current.strftime("%Y%m%d")
@@ -391,83 +385,13 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                         file_names = sftp_client.list_files(path=date_path, suffix=".txt")
                         logger.info("[BATCH_FILES_FOUND] Found %d files for date %s", len(file_names), date_str)
                         
-                        # 3. 각 파일 처리 (ThreadPoolExecutor로 병렬 처리)
-                        def process_file(file_name):
-                            """단일 파일 처리 함수 (병렬 실행용)"""
-                            try:
-                                # list_files returns only filename, need to construct full path
-                                file_path = f"{date_path}/{file_name}"
-                                logger.debug("[BATCH_FILE_PROCESS] Processing: %s (thread=%s)", 
-                                           file_name, threading.current_thread().ident)
-                                
-                                # 파일 내용 읽기 - 전체 경로 사용
-                                content = sftp_client.read_file(file_path)
-                                
-                                # AI 처리 (vLLM 또는 Agent)
-                                detector = get_detector(config.CALL_TYPE, config)
-                                # Default prompt for batch processing
-                                default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
-                                logger.info("[BATCH_FILE_DETECT] Calling detector for %s (call_type=%s)", file_name, config.CALL_TYPE)
-                                try:
-                                    ai_result = asyncio.run(detector.detect(content, default_prompt))
-                                    logger.info("[BATCH_FILE_DETECT_OK] Detector returned: category=%s, issues=%d", 
-                                               ai_result.get("category", "unknown"), 
-                                               len(ai_result.get("detected_issues", [])))
-                                except Exception as detect_error:
-                                    logger.error("[BATCH_FILE_DETECT_ERROR] Detector failed: %s", detect_error, exc_info=True)
-                                    raise
-                                
-                                # 결과 변환
-                                now = datetime.now(timezone.utc)
-                                result_item = {
-                                    "date": date_str,
-                                    "filename": file_name,
-                                    "success": True,
-                                    "text": content,
-                                    "category": ai_result.get("category", "unknown"),
-                                    "summary": ai_result.get("summary", ""),
-                                    "omission_num": str(ai_result.get("omission_num", 0)),
-                                    "detected_issues": ai_result.get("detected_issues", []),
-                                    "processing_time_ms": ai_result.get("processing_time_ms", 0),
-                                    "created_at": now
-                                }
-                                logger.debug("[BATCH_FILE_OK] %s processed successfully", file_name)
-                                return result_item, True, None
-                                
-                            except Exception as file_error:
-                                logger.error("[BATCH_FILE_ERROR] Failed to process %s: %s", 
-                                             file_name, str(file_error), exc_info=True)
-                                return None, False, str(file_error)
-                        
-                        # ThreadPoolExecutor로 파일들을 병렬 처리
-                        logger.info("[BATCH_PARALLEL_START] Processing %d files in parallel", len(file_names))
-                        file_futures = []
-                        
-                        with ThreadPoolExecutor(max_workers=5, thread_name_prefix=f"batch-{job_id}-") as file_executor:
-                            for file_name in file_names:
-                                future = file_executor.submit(process_file, file_name)
-                                file_futures.append(future)
-                            
-                            # 모든 파일 처리 완료 대기
-                            for future in as_completed(file_futures):
-                                try:
-                                    result_item, success, error = future.result()
-                                    if success:
-                                        logger.info("[BATCH_RESULT_OK] File processed successfully: %s", result_item.get("filename"))
-                                        real_results.append(result_item)
-                                        date_files[date_str]["success"] += 1
-                                    else:
-                                        logger.warning("[BATCH_RESULT_ERROR] File processing failed: %s", error)
-                                        date_files[date_str]["failed"] += 1
-                                    date_files[date_str]["total"] += 1
-                                except Exception as e:
-                                    logger.error("[BATCH_FUTURE_ERROR] Error retrieving file result: %s", e, exc_info=True)
-                                    date_files[date_str]["failed"] += 1
-                                    date_files[date_str]["total"] += 1
-                        
-                        logger.info("[BATCH_PARALLEL_COMPLETE] Parallel processing complete for date %s: total=%d, success=%d, failed=%d", 
-                                   date_str, date_files[date_str]["total"], 
-                                   date_files[date_str]["success"], date_files[date_str]["failed"])
+                        # Collect files for async processing
+                        for file_name in file_names:
+                            files_to_process.append({
+                                "date": date_str,
+                                "date_path": date_path,
+                                "filename": file_name
+                            })
                         
                         current += timedelta(days=1)
                     
@@ -476,14 +400,82 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
                                      date_path, str(dir_error))
                         current += timedelta(days=1)
                 
-                logger.info("[BATCH_REAL_RESULTS] Real mode processing complete: total_results=%d files collected", len(real_results))
-                for idx, result in enumerate(real_results):
-                    logger.info("[BATCH_REAL_RESULT_%d] File: %s, Category: %s, Issues: %d", 
-                               idx, result.get("filename"), result.get("category"), 
-                               len(result.get("detected_issues", [])))
-                results = real_results
+                # 3. Async helper to process single file
+                async def process_file_async(file_info):
+                    """Async 단일 파일 처리 함수 - 같은 event loop에서 실행됨"""
+                    try:
+                        date_str = file_info["date"]
+                        date_path = file_info["date_path"]
+                        file_name = file_info["filename"]
+                        file_path = f"{date_path}/{file_name}"
+                        
+                        logger.debug("[BATCH_FILE_PROCESS] Processing: %s", file_name)
+                        
+                        # 파일 내용 읽기 (blocking I/O를 executor로 처리)
+                        loop = asyncio.get_event_loop()
+                        content = await loop.run_in_executor(
+                            None,
+                            sftp_client.read_file,
+                            file_path
+                        )
+                        
+                        # AI 처리 (async detector.detect 호출)
+                        detector = get_detector(config.CALL_TYPE, config)
+                        default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
+                        logger.info("[BATCH_FILE_DETECT] Calling detector for %s (call_type=%s)", 
+                                   file_name, config.CALL_TYPE)
+                        
+                        ai_result = await detector.detect(content, default_prompt)
+                        logger.info("[BATCH_FILE_DETECT_OK] Detector returned: category=%s, issues=%d", 
+                                   ai_result.get("category", "unknown"), 
+                                   len(ai_result.get("detected_issues", [])))
+                        
+                        # 결과 변환
+                        now = datetime.now(timezone.utc)
+                        result_item = {
+                            "date": date_str,
+                            "filename": file_name,
+                            "success": True,
+                            "text": content,
+                            "category": ai_result.get("category", "unknown"),
+                            "summary": ai_result.get("summary", ""),
+                            "omission_num": str(ai_result.get("omission_num", 0)),
+                            "detected_issues": ai_result.get("detected_issues", []),
+                            "processing_time_ms": ai_result.get("processing_time_ms", 0),
+                            "created_at": now
+                        }
+                        logger.debug("[BATCH_FILE_OK] %s processed successfully", file_name)
+                        return result_item, True, None
+                        
+                    except Exception as file_error:
+                        logger.error("[BATCH_FILE_ERROR] Failed to process %s: %s", 
+                                     file_name, str(file_error), exc_info=True)
+                        return None, False, str(file_error)
                 
-                # 4. 공통 DB 저장 로직 (아래에서 처리)
+                # 4. Process all files concurrently using asyncio.gather
+                logger.info("[BATCH_ASYNC_START] Processing %d files concurrently", len(files_to_process))
+                
+                if files_to_process:
+                    tasks = [process_file_async(f) for f in files_to_process]
+                    results_tuples = await asyncio.gather(*tasks, return_exceptions=False)
+                    
+                    for result_item, success, error in results_tuples:
+                        if success:
+                            results.append(result_item)
+                            date_str = result_item["date"]
+                            date_files[date_str]["total"] += 1
+                            date_files[date_str]["success"] += 1
+                            logger.info("[BATCH_RESULT_OK] File processed successfully: %s", result_item.get("filename"))
+                        else:
+                            logger.warning("[BATCH_RESULT_ERROR] File processing failed: %s", error)
+                            # Track failed file if we have date info
+                            if result_item:
+                                date_files[result_item["date"]]["failed"] += 1
+                                date_files[result_item["date"]]["total"] += 1
+                else:
+                    logger.info("[BATCH_NO_FILES] No files found to process")
+                
+                logger.info("[BATCH_ASYNC_COMPLETE] Async processing complete: %d files processed", len(results))
                 
             except Exception as sftp_error:
                 logger.exception("[BATCH_REAL_ERROR] Real mode processing failed: %s", sftp_error)
@@ -559,20 +551,7 @@ def run_batch_sync(job_id: str, req: BatchProcessRequest):
         logger.info("=" * 80)
 
 
-async def run_batch_async(job_id: str, req: BatchProcessRequest):
-    """Background task to execute batch processing and store results in database.
-    
-    For APP_ENV=local (Mock mode), this creates sample results quickly.
-    """
-    logger.info("🚀 백그라운드 배치 작업 시작: job_id=%s, date_range=%s~%s", job_id, req.start_date, req.end_date)
-    
-    def run_batch_sync_wrapper():
-        """동기 배치 처리 함수"""
-        run_batch_sync(job_id, req)
-    
-    # ThreadPoolExecutor에서 동기 함수 실행
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, run_batch_sync_wrapper)
+
 
 
 @router.post("/batch")
@@ -721,13 +700,13 @@ async def process_batch_submit(req: BatchProcessRequest):
         logger.exception("[BATCH_SUBMIT_DB_ERROR] Failed to create job: %s", e)
         raise
 
-    # 배치 처리 실행
-    logger.info("[BATCH_SUBMIT_THREAD] Executing batch processing: %s", job_id)
+    # 배치 처리 실행 (async로)
+    logger.info("[BATCH_SUBMIT_ASYNC] Executing batch processing: %s", job_id)
     try:
-        run_batch_sync(job_id, req)
-        logger.info("[BATCH_SYNC_OK] Batch execution completed: %s", job_id)
+        await run_batch_async(job_id, req)
+        logger.info("[BATCH_ASYNC_OK] Batch execution completed: %s", job_id)
     except Exception as e:
-        logger.exception("[BATCH_SYNC_ERROR] Batch execution failed: %s", e)
+        logger.exception("[BATCH_ASYNC_ERROR] Batch execution failed: %s", e)
 
     response = {
         "job_id": job_id,
