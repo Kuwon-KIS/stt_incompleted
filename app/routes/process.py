@@ -10,6 +10,8 @@ import uuid
 import csv
 import io
 from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -350,7 +352,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
             logger.info("[BATCH_MOCK_ASYNC_START] Processing %d mock files concurrently", len(files_to_process))
             
             tasks = [process_mock_file_async(f) for f in files_to_process]
-            results_tuples = await asyncio.gather(*tasks, return_exceptions=False)
+            results_tuples = await asyncio.gather(*tasks, return_exceptions=True)
             
             for result_item, success, error in results_tuples:
                 if success:
@@ -372,8 +374,8 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
             logger.info("[BATCH_MODE] Real mode: reading from SFTP and processing with AI (async)")
             
             try:
-                # 1. SFTP 클라이언트 초기화
-                logger.info("[BATCH_SFTP_INIT] Initializing SFTP client: %s:%d", 
+                # 1. SFTP 클라이언트 초기화 (파일 목록 조회용only, 각 파일 읽기는 별도 연결 사용)
+                logger.info("[BATCH_SFTP_INIT] Initializing SFTP client for file listing: %s:%d", 
                            config.SFTP_HOST, config.SFTP_PORT)
                 sftp_client = SFTPClient(
                     host=config.SFTP_HOST,
@@ -382,6 +384,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     password=config.SFTP_PASSWORD,
                     pkey=config.SFTP_KEY
                 )
+                logger.info("[BATCH_SFTP_CONNECTED] SFTP client connected for listing")
                 
                 # 2. 날짜 범위별 파일 조회
                 current = datetime.strptime(req.start_date, "%Y%m%d")
@@ -418,6 +421,57 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                                      date_path, str(dir_error))
                         current += timedelta(days=1)
                 
+                # File listing complete, close the initial SFTP connection (individual threads will create their own)
+                logger.info("[BATCH_SFTP_FILES_COLLECTED] Collected %d files to process", len(files_to_process))
+                try:
+                    sftp_client.close()
+                    logger.info("[BATCH_SFTP_LISTING_CLOSED] SFTP connection for listing closed")
+                except Exception as close_err:
+                    logger.warning("[BATCH_SFTP_LISTING_CLOSE_ERROR] Error closing listing connection: %s", close_err)
+                
+                # Create a dedicated thread pool for SFTP reads (limit concurrency to 3 threads)
+                # This prevents Paramiko thread-safety issues and executor pool exhaustion
+                sftp_read_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sftp-read-")
+                logger.info("[BATCH_SFTP_EXECUTOR] Created ThreadPoolExecutor with max_workers=3")
+                
+                def read_file_with_new_connection(file_path: str) -> str:
+                    """
+                    Read file from SFTP using a NEW connection (thread-safe approach).
+                    Each thread gets its own SFTP connection to avoid Paramiko concurrency issues.
+                    """
+                    thread_id = threading.current_thread().ident
+                    thread_name = threading.current_thread().name
+                    logger.info("[SFTP_READ_THREAD_%s] Starting file read: %s (thread=%s)", 
+                               thread_id, file_path, thread_name)
+                    
+                    read_start = time.time()
+                    try:
+                        # Create a new SFTP connection for this thread
+                        logger.debug("[SFTP_READ_CONNECT_%s] Creating new SFTP connection", thread_id)
+                        thread_sftp = SFTPClient(
+                            host=config.SFTP_HOST,
+                            port=config.SFTP_PORT,
+                            username=config.SFTP_USERNAME,
+                            password=config.SFTP_PASSWORD,
+                            pkey=config.SFTP_KEY,
+                            timeout=30  # Connection timeout
+                        )
+                        
+                        logger.debug("[SFTP_READ_OPEN_%s] Connected, reading file", thread_id)
+                        content = thread_sftp.read_file(file_path)
+                        thread_sftp.close()
+                        
+                        elapsed = time.time() - read_start
+                        logger.info("[SFTP_READ_OK_%s] File read success: %d bytes in %.2fs", 
+                                   thread_id, len(content), elapsed)
+                        return content
+                        
+                    except Exception as e:
+                        elapsed = time.time() - read_start
+                        logger.error("[SFTP_READ_ERROR_%s] File read failed after %.2fs: %s", 
+                                    thread_id, elapsed, str(e), exc_info=True)
+                        raise
+                
                 # 3. Async helper to process single file
                 async def process_file_async(file_info):
                     """Async 단일 파일 처리 함수 - 같은 event loop에서 실행됨"""
@@ -427,26 +481,61 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                         file_name = file_info["filename"]
                         file_path = f"{date_path}/{file_name}"
                         
-                        logger.debug("[BATCH_FILE_PROCESS] Processing: %s", file_name)
+                        logger.info("[BATCH_FILE_START] Starting file processing: %s", file_name)
+                        sys.stdout.flush()
                         
-                        # 파일 내용 읽기 (blocking I/O를 executor로 처리)
-                        loop = asyncio.get_event_loop()
-                        content = await loop.run_in_executor(
-                            None,
-                            sftp_client.read_file,
-                            file_path
-                        )
+                        # 파일 내용 읽기 (dedicated thread pool by file)
+                        logger.info("[BATCH_FILE_READ_START] About to read file from SFTP: %s (queue may have %d pending)", 
+                                   file_path, len(files_to_process))
+                        sys.stdout.flush()
+                        
+                        read_start = time.time()
+                        try:
+                            loop = asyncio.get_event_loop()
+                            logger.debug("[BATCH_FILE_READ_SUBMIT] Submitting to executor")
+                            
+                            # Submit to dedicated SFTP read executor (max 3 concurrent connections)
+                            content = await asyncio.wait_for(
+                                loop.run_in_executor(sftp_read_executor, read_file_with_new_connection, file_path),
+                                timeout=60.0  # Increased from 30s to 60s for network delay
+                            )
+                            
+                            elapsed = time.time() - read_start
+                            logger.info("[BATCH_FILE_READ_OK] File read successfully: %d bytes in %.2fs", 
+                                       len(content), elapsed)
+                            sys.stdout.flush()
+                            
+                        except asyncio.TimeoutError:
+                            elapsed = time.time() - read_start
+                            logger.error("[BATCH_FILE_READ_TIMEOUT] SFTP read timed out after %.2fs (limit=60s): %s", 
+                                        elapsed, file_path)
+                            sys.stdout.flush()
+                            raise Exception(f"SFTP file read timeout (60s exceeded): {file_path}")
+                        except Exception as read_err:
+                            elapsed = time.time() - read_start
+                            logger.error("[BATCH_FILE_READ_ERROR] SFTP read failed after %.2fs: %s", 
+                                        elapsed, str(read_err), exc_info=True)
+                            sys.stdout.flush()
+                            raise
                         
                         # AI 처리 (async detector.detect 호출)
+                        logger.info("[BATCH_DETECTOR_INIT] Initializing detector: %s", config.CALL_TYPE)
+                        sys.stdout.flush()
+                        
                         detector = get_detector(config.CALL_TYPE, config)
+                        logger.info("[BATCH_DETECTOR_READY] Detector ready")
+                        sys.stdout.flush()
+                        
                         default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
                         logger.info("[BATCH_FILE_DETECT] Calling detector for %s (call_type=%s)", 
                                    file_name, config.CALL_TYPE)
+                        sys.stdout.flush()
                         
                         ai_result = await detector.detect(content, default_prompt)
                         logger.info("[BATCH_FILE_DETECT_OK] Detector returned: category=%s, issues=%d", 
                                    ai_result.get("category", "unknown"), 
                                    len(ai_result.get("detected_issues", [])))
+                        sys.stdout.flush()
                         
                         # 결과 변환
                         now = datetime.now(timezone.utc)
@@ -470,12 +559,14 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                                      file_name, str(file_error), exc_info=True)
                         return None, False, str(file_error)
                 
-                # 4. Process all files concurrently using asyncio.gather
-                logger.info("[BATCH_ASYNC_START] Processing %d files concurrently", len(files_to_process))
+                # 4. Process all files concurrently using asyncio.gather with dedicated executor
+                logger.info("[BATCH_ASYNC_START] Processing %d files concurrently (max 3 threads per file I/O)", 
+                           len(files_to_process))
+                batch_start = time.time()
                 
                 if files_to_process:
                     tasks = [process_file_async(f) for f in files_to_process]
-                    results_tuples = await asyncio.gather(*tasks, return_exceptions=False)
+                    results_tuples = await asyncio.gather(*tasks, return_exceptions=True)
                     
                     for result_item, success, error in results_tuples:
                         if success:
@@ -493,11 +584,19 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                 else:
                     logger.info("[BATCH_NO_FILES] No files found to process")
                 
-                logger.info("[BATCH_ASYNC_COMPLETE] Async processing complete: %d files processed", len(results))
+                batch_elapsed = time.time() - batch_start
+                logger.info("[BATCH_ASYNC_COMPLETE] Async processing complete: %d files processed in %.2fs", 
+                           len(results), batch_elapsed)
                 
             except Exception as sftp_error:
                 logger.exception("[BATCH_REAL_ERROR] Real mode processing failed: %s", sftp_error)
                 raise
+            finally:
+                # Clean up resources
+                if 'sftp_read_executor' in locals():
+                    logger.info("[BATCH_EXECUTOR_SHUTDOWN] Shutting down thread pool executor")
+                    sftp_read_executor.shutdown(wait=True)
+                    logger.info("[BATCH_EXECUTOR_OK] Thread pool executor shut down")
         
         # ===== 공통 DB 저장 로직 (Local/Real 모드 모두) =====
         logger.info("[BATCH_DB_INSERT_START] Saving %d results to database", len(results))

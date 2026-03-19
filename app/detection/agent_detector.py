@@ -55,6 +55,7 @@ class AgentDetector(DetectionStrategy):
         
         2. Nested format (actual Agent API):
            { message_id, chat_thread_id, answer: { answer: { category, summary, ... } } }
+           또는 answer.answer가 JSON 문자열일 수도 있음
         
         Args:
             response: JSON string from Agent API
@@ -74,6 +75,15 @@ class AgentDetector(DetectionStrategy):
                 if "answer" in agent_response["answer"]:
                     agent_result = agent_response["answer"]["answer"]
                     logger.debug("Extracted nested Agent response format")
+            
+            # Handle case where agent_result might be a JSON string (double-nested)
+            if isinstance(agent_result, str):
+                try:
+                    agent_result = json.loads(agent_result)
+                    logger.debug("Parsed double-nested JSON string in agent_result")
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning("agent_result is a string but not valid JSON: %s", agent_result[:100])
+                    return [{"error": "invalid_format", "details": "agent_result is a string but not JSON"}]
             
             # Extract omission information
             omission_steps = agent_result.get("omission_steps", [])
@@ -195,6 +205,14 @@ class AgentDetector(DetectionStrategy):
             if "answer" in agent_data and isinstance(agent_data["answer"], dict):
                 if "answer" in agent_data["answer"]:
                     agent_data = agent_data["answer"]["answer"]
+                    # Handle case where nested answer is a JSON string
+                    if isinstance(agent_data, str):
+                        try:
+                            agent_data = json.loads(agent_data)
+                            logger.debug("Parsed nested answer as JSON string")
+                        except (json.JSONDecodeError, TypeError):
+                            logger.warning("Nested answer is a string but not valid JSON: %s", agent_data[:100])
+                            agent_data = {}
             
             processing_time = (time.time() - start_time) * 1000
             
