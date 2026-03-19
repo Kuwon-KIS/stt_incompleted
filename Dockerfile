@@ -27,15 +27,14 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (includes static files and vendor libraries)
+# - app/static/ - CSS, JS, HTML
+# - app/static/vendor/flatpickr/ - Locally cached flatpickr for on-prem deployment (no CDN access)
 COPY ./app ./app
 
 # Copy environment configuration directory (must exist with .gitkeep for git tracking)
 # All .env files inside are git-ignored for security
 COPY environments/ ./environments/
-
-# Copy templates if they exist (optional)
-COPY app/templates/ ./app/templates/
 
 # Create data and logs directories with proper permissions
 RUN mkdir -p /app/app/data/logs && chmod 755 /app/app/data/logs
