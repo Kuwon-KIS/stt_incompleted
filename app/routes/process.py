@@ -223,31 +223,45 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
     logger.info("=" * 80)
     logger.info("[BATCH_ASYNC_START] job_id=%s, date_range=%s~%s, option_id=%s", 
                 job_id, req.start_date, req.end_date, req.option_id)
-    import sys; sys.stdout.flush()  # Force flush
+    import sys; sys.stdout.flush()
     
     try:
         # Step 1: Handle option_id for SELECT_TARGET feature
-        logger.info("[BATCH_STEP_1] Checking option_id: %s", req.option_id)
+        logger.info("[BATCH_STEP_1_START] Checking option_id")
+        sys.stdout.flush()
         if req.option_id == "view_history":
             logger.info("[BATCH_OPTION] option_id='view_history': returning without processing")
             db.update_job_status(job_id, "completed")
             logger.info("[BATCH_SUCCESS] Job completed (view_history mode)")
             logger.info("=" * 80)
             return
+        logger.info("[BATCH_STEP_1_OK] option_id check completed: %s", req.option_id)
+        sys.stdout.flush()
         
         # Step 2: Adjust force_reprocess based on option_id
-        logger.info("[BATCH_STEP_2] Checking force_reprocess option")
+        logger.info("[BATCH_STEP_2_START] Adjusting force_reprocess")
+        sys.stdout.flush()
         if req.option_id == "reprocess" or req.option_id == "reprocess_all":
             req.force_reprocess = True
             logger.info("[BATCH_OPTION] option_id='%s': setting force_reprocess=true", req.option_id)
+        logger.info("[BATCH_STEP_2_OK] force_reprocess adjusted")
+        sys.stdout.flush()
         
         logger.info("[BATCH_STATUS_UPDATE] Updating status to 'running'")
-        sys.stdout.flush()  # Force flush
-        db.update_job_status(job_id, "running")
-        logger.info("[BATCH_STATUS_OK] Status updated successfully")
+        sys.stdout.flush()
+        try:
+            db.update_job_status(job_id, "running")
+            logger.info("[BATCH_STATUS_OK] Status updated successfully")
+            sys.stdout.flush()
+        except Exception as db_err:
+            logger.exception("[BATCH_STATUS_ERROR] Failed to update job status: %s", db_err)
+            sys.stdout.flush()
+            raise
 
         results = []
         date_files = {}
+        logger.info("[BATCH_READY] Ready to process (APP_ENV=%s)", config.APP_ENV)
+        sys.stdout.flush()
         
         # APP_ENV=local이면 Mock 배치 처리 (async 병렬 처리)
         if config.APP_ENV == "local":

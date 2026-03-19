@@ -556,22 +556,15 @@ class App {
 
             // 응답 케이스별 처리
             if (response.status === 'submitted' && response.case === 'no_overlap') {
-                // ✅ 케이스 3: 새 작업 생성 - 모니터링 시작
+                // ✅ 케이스 3: 새 작업 생성
                 const jobId = response.job_id;
-                this.monitorBatchJob(jobId);
+                alert(`✅ 배치 작업 제출 완료\n\n작업 ID: ${jobId}\n\n이력 페이지에서 F5로 새로고침하여 처리 진행상황을 확인하세요.`);
+                if (progressContainer) progressContainer.style.display = 'none';
 
             } else if (response.status === 'duplicate' && response.case === 'exact_overlap') {
                 // ⚠️ 케이스 1: 전체 겹침
-                if (forceReprocess) {
-                    // force_reprocess=true인데 여기 올 수 없음 (백엔드에서 새 job 생성)
-                    this.monitorBatchJob(response.job_id);
-                } else {
-                    // force_reprocess=false - 기존 작업 반환
-                    alert(`❌ 동일한 범위의 작업이 이미 ${response.message}\n\n작업 ID: ${response.job_id}`);
-                    const resultsContainer = document.getElementById('results-container');
-                    if (resultsContainer) resultsContainer.style.display = 'block';
-                    if (progressContainer) progressContainer.style.display = 'none';
-                }
+                alert(`❌ 동일한 범위의 작업이 이미 ${response.message}\n\n작업 ID: ${response.job_id}`);
+                if (progressContainer) progressContainer.style.display = 'none';
 
             } else if (response.status === 'partial_overlap_detected' && response.case === 'partial_overlap') {
                 // ⚠️ 케이스 2: 부분 겹침
@@ -613,117 +606,7 @@ class App {
         }
     }
 
-    async monitorBatchJob(jobId) {
-        const maxAttempts = 1800; // 30분
-        let attempts = 0;
 
-        const checkStatus = async () => {
-            try {
-                const response = await fetch(`/process/batch/status/${jobId}`);
-                if (!response.ok) throw new Error('Status check failed');
-                
-                const status = await response.json();
-
-                // 진행 상황 업데이트 (running 상태에서도 결과 수 표시)
-                if (status.status === 'running' || status.status === 'completed') {
-                    const completed = status.results ? status.results.length : 0;
-                    const progressCount = document.getElementById('progress-count');
-                    const progressStatus = document.getElementById('progress-status');
-                    
-                    if (progressCount) {
-                        progressCount.textContent = `${completed}개 처리 중...`;
-                    }
-                    if (progressStatus) {
-                        progressStatus.textContent = status.status === 'running' ? '🔄 실행 중...' : '✅ 처리 완료';
-                    }
-                }
-
-                // 완료 또는 오류
-                if (status.status === 'completed' || status.status === 'failed') {
-                    this.displayBatchResults(status, jobId);
-                    return;
-                }
-
-                // 계속 모니터링 (3초 주기)
-                if (attempts < maxAttempts) {
-                    attempts++;
-                    setTimeout(checkStatus, 3000);
-                } else {
-                    alert('작업 모니터링 타임아웃');
-                }
-            } catch (error) {
-                console.error('상태 조회 오류:', error);
-                attempts++;
-                if (attempts < maxAttempts) {
-                    setTimeout(checkStatus, 3000);
-                }
-            }
-        };
-
-        checkStatus();
-    }
-
-    displayBatchResults(status, jobId) {
-        const progressContainer = document.getElementById('progress-container');
-        const resultsContainer = document.getElementById('results-container');
-        
-        if (progressContainer) progressContainer.style.display = 'none';
-        if (resultsContainer) resultsContainer.style.display = 'block';
-
-        const results = status.results || [];
-        const successCount = results.filter(r => r.success).length;
-        const errorCount = results.filter(r => !r.success).length;
-
-        // 요약
-        const resultTotal = document.getElementById('result-total');
-        const resultSuccess = document.getElementById('result-success');
-        const resultError = document.getElementById('result-error');
-        
-        if (resultTotal) resultTotal.textContent = results.length;
-        if (resultSuccess) resultSuccess.textContent = successCount;
-        if (resultError) resultError.textContent = errorCount;
-
-        // 테이블에 결과 렌더링
-        const resultsTableBody = document.querySelector('#results-table tbody');
-        if (resultsTableBody) {
-            resultsTableBody.innerHTML = results.map(result => `
-                <tr class="${result.success ? 'success-row' : 'error-row'}">
-                    <td>${result.date || '-'}</td>
-                    <td>${result.filename || `파일 #${results.indexOf(result) + 1}`}</td>
-                    <td>
-                        <span class="badge ${result.success ? 'success' : 'error'}">
-                            ${result.success ? '성공' : '실패'}
-                        </span>
-                    </td>
-                    <td>
-                        ${result.success ? 
-                            (result.detected_issues ? `누락: ${result.detected_issues.length}건` : '완료') :
-                            (result.error || '처리 실패')}
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        // 작업 저장
-        window.currentJob = {
-            job_id: jobId,
-            status: status.status,
-            results: results,
-            created_at: new Date().toISOString()
-        };
-
-        // 스크롤
-        if (resultsContainer) {
-            resultsContainer.scrollIntoView({ behavior: 'smooth' });
-        }
-        
-        // 자동으로 이력 탭으로 전환하고 결과 표시
-        setTimeout(() => {
-            this.switchPage('history');
-            // loadJobHistory 호출
-            this.loadJobHistory();
-        }, 500);
-    }
 
     // ===== Job History & Detail View =====
 

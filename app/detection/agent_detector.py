@@ -170,23 +170,31 @@ class AgentDetector(DetectionStrategy):
             result_data = response.json()
             logger.debug("Agent response received: status=%d", response.status_code)
             
-            # Extract result from response
-            # Note: Adjust based on actual Agent response format
-            completion = result_data.get("result", "")
+            # Handle two response formats:
+            # 1. Mock format: {"result": "{...json string...}"}
+            # 2. On-prem format: {"message_id": "...", "chat_thread_id": "...", "answer": {...}}
+            
+            if "result" in result_data:
+                # Mock/agent format: result is a JSON string
+                completion = result_data.get("result", "")
+                try:
+                    agent_data = json.loads(completion) if completion else {}
+                except (json.JSONDecodeError, TypeError):
+                    agent_data = {}
+            else:
+                # On-prem format: direct response structure
+                agent_data = result_data
+                completion = json.dumps(result_data)
+            
+            logger.debug("Agent response format: %s", "mock" if "result" in result_data else "on-prem")
             
             # Extract detected issues
             detected_issues = await self.extract_issues(completion)
             
-            # Parse Agent response to extract metadata
-            try:
-                agent_response = json.loads(completion)
-                # Navigate nested structure if exists
-                agent_data = agent_response
-                if "answer" in agent_response and isinstance(agent_response["answer"], dict):
-                    if "answer" in agent_response["answer"]:
-                        agent_data = agent_response["answer"]["answer"]
-            except (json.JSONDecodeError, TypeError):
-                agent_data = {}
+            # Navigate nested structure if exists (for mock format)
+            if "answer" in agent_data and isinstance(agent_data["answer"], dict):
+                if "answer" in agent_data["answer"]:
+                    agent_data = agent_data["answer"]["answer"]
             
             processing_time = (time.time() - start_time) * 1000
             
