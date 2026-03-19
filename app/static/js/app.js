@@ -11,21 +11,23 @@ class App {
     }
 
     async init() {
-        console.log('🚀 STT 사후 점검 시스템 시작...');
+        
         
         try {
             // 이벤트 리스너 등록
             this.setupEventListeners();
-            console.log('✅ 이벤트 리스너 등록 완료');
+            
             
             // 초기 상태 로드
             await this.refreshStatus();
-            console.log('✅ 상태 로드 완료');
             
-            // 주기적 상태 업데이트
-            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 30000);
             
-            console.log('✅ 초기화 완료');
+            // 주기적 상태 업데이트 (기본: 1분에 한 번)
+            // 페이지 전환 시 조정됨 (배치/히스토리: 5분)
+            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 60000);
+            this.statusCheckIntervalMs = 60000;
+            
+            
         } catch (error) {
             console.error('❌ 초기화 실패:', error);
         }
@@ -46,7 +48,7 @@ class App {
         if (analyzeBtn) {
             analyzeBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('🔵 분석 버튼 클릭됨');
+                
                 this.analyzeBatchRange();
             });
         } else {
@@ -58,7 +60,7 @@ class App {
         if (startBtn) {
             startBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('🟢 처리 시작 버튼 클릭됨');
+                
                 this.submitBatchWithOption();
             });
         } else {
@@ -70,7 +72,7 @@ class App {
         if (cancelBtn) {
             cancelBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('🟡 취소 버튼 클릭됨');
+                
                 this.resetBatchUI();
             });
         } else {
@@ -82,13 +84,13 @@ class App {
         const endDateInput = document.getElementById('end-date-input');
         if (startDateInput) {
             startDateInput.addEventListener('change', () => {
-                console.log('📅 시작 날짜 입력 변경');
+                
                 this.onDateInputChange();
             });
         }
         if (endDateInput) {
             endDateInput.addEventListener('change', () => {
-                console.log('📅 종료 날짜 입력 변경');
+                
                 this.onDateInputChange();
             });
         }
@@ -98,7 +100,7 @@ class App {
         if (refreshBtn) {
             refreshBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('🔄 새로고침 버튼 클릭됨');
+                
                 this.loadBatchDateRange();
             });
         }
@@ -159,11 +161,11 @@ class App {
         // 모달 내 다운로드 버튼
         const modalDownloadBtn = document.getElementById('modal-download-btn');
         if (modalDownloadBtn) {
-            console.log('✅ 모달 다운로드 버튼 찾음');
+            
             modalDownloadBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('💾 파일별 결과 다운로드 버튼 클릭됨');
+                
                 this.downloadResults();
             });
         } else {
@@ -216,9 +218,21 @@ class App {
 
         this.currentPage = pageName;
 
+        // 페이지별 상태 체크 빈도 조정
+        // 대시보드: 1분마다 (SFTP 상태 체크)
+        // 배치/히스토리: 5분마다 (SFTP 호출 최소화)
+        if (pageName === 'dashboard') {
+            clearInterval(this.statusCheckInterval);
+            this.statusCheckIntervalMs = 60000;
+            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 60000);
+        } else if (pageName === 'batch' || pageName === 'history') {
+            clearInterval(this.statusCheckInterval);
+            this.statusCheckIntervalMs = 300000;
+            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 300000);
+        }
+
         // Page-specific setup
         if (pageName === 'batch') {
-            console.log('📄 배치 페이지 진입');
             this.initializeBatchCalendar();
         } else if (pageName === 'history') {
             this.loadJobHistory();
@@ -388,7 +402,6 @@ class App {
             // 유효한 범위가 있으면 필터링
             if (window.batchDateRange && window.batchDateRange.min_date && window.batchDateRange.max_date) {
                 url += `?start_date=${window.batchDateRange.min_date}&end_date=${window.batchDateRange.max_date}`;
-                console.log(`📊 유효한 범위 내 날짜별 통계 조회: ${window.batchDateRange.min_date} ~ ${window.batchDateRange.max_date}`);
             }
             
             const response = await fetch(url);
@@ -529,7 +542,6 @@ class App {
             const forceReprocess = forceReprocessCheckbox?.checked || false;
             const handleOverlap = handleOverlapRadio?.value || 'new';
 
-            console.log(`📋 배치 옵션: forceReprocess=${forceReprocess}, handleOverlap=${handleOverlap}`);
 
             // 진행 상황 표시
             const progressContainer = document.getElementById('progress-container');
@@ -546,20 +558,18 @@ class App {
                 handleOverlap: handleOverlap
             });
 
-            console.log('📨 API 응답:', response);
+
 
             // 응답 케이스별 처리
             if (response.status === 'submitted' && response.case === 'no_overlap') {
                 // ✅ 케이스 3: 새 작업 생성 - 모니터링 시작
                 const jobId = response.job_id;
-                console.log(`✅ 새 배치 작업 생성: ${jobId}`);
                 this.monitorBatchJob(jobId);
 
             } else if (response.status === 'duplicate' && response.case === 'exact_overlap') {
                 // ⚠️ 케이스 1: 전체 겹침
                 if (forceReprocess) {
                     // force_reprocess=true인데 여기 올 수 없음 (백엔드에서 새 job 생성)
-                    console.log(`✅ 강제 재처리 중...`);
                     this.monitorBatchJob(response.job_id);
                 } else {
                     // force_reprocess=false - 기존 작업 반환
@@ -636,7 +646,6 @@ class App {
 
                 // 완료 또는 오류
                 if (status.status === 'completed' || status.status === 'failed') {
-                    console.log('✅ 배치 처리 완료:', status);
                     this.displayBatchResults(status, jobId);
                     return;
                 }
@@ -715,7 +724,6 @@ class App {
         }
         
         // 자동으로 이력 탭으로 전환하고 결과 표시
-        console.log('✅ 배치 처리 완료, 이력 탭으로 전환');
         setTimeout(() => {
             this.switchPage('history');
             // loadJobHistory 호출
@@ -731,7 +739,6 @@ class App {
             
             // 날짜 범위가 지정된 경우 (이전 기록 보기)
             if (startDate && endDate) {
-                console.log(`📅 날짜 범위로 작업 조회: ${startDate} ~ ${endDate}`);
                 try {
                     const response = await fetch(`/api/admin/jobs?start_date=${startDate}&end_date=${endDate}`);
                     if (!response.ok) {
@@ -739,14 +746,12 @@ class App {
                     }
                     const data = await response.json();
                     jobs = data.jobs || [];
-                    console.log(`✅ 조회된 작업 수: ${jobs.length}`);
                 } catch (error) {
                     console.error('❌ 날짜 범위 작업 조회 실패:', error);
                     jobs = [];
                 }
             } else {
                 // 날짜 범위 없이 전체 이력 조회 (이력 페이지 첫 진입)
-                console.log('📥 전체 작업 이력 조회 중...');
                 try {
                     const response = await fetch('/api/admin/jobs/all');
                     if (!response.ok) {
@@ -754,7 +759,6 @@ class App {
                     }
                     const data = await response.json();
                     jobs = data.jobs || [];
-                    console.log(`✅ 조회된 전체 작업 수: ${jobs.length}`);
                 } catch (error) {
                     console.error('❌ 전체 작업 조회 실패:', error);
                     jobs = [];
@@ -770,7 +774,6 @@ class App {
     displayJobList(jobs, filterStartDate = null, filterEndDate = null) {
         const container = document.getElementById('jobs-list');
         
-        console.log('📋 displayJobList 호출:', { jobCount: jobs?.length, container: !!container, filterStartDate, filterEndDate });
         
         if (!container) {
             console.error('❌ jobs-list 컨테이너를 찾을 수 없습니다!');
@@ -778,7 +781,6 @@ class App {
         }
 
         if (!jobs || jobs.length === 0) {
-            console.log('📭 작업 이력 없음');
             let emptyMessage = '작업 이력이 없습니다';
             if (filterStartDate && filterEndDate) {
                 const formattedStart = `${filterStartDate.substring(0, 4)}-${filterStartDate.substring(4, 6)}-${filterStartDate.substring(6, 8)}`;
@@ -793,32 +795,25 @@ class App {
         if (filterStartDate && filterEndDate) {
             const formattedStart = `${filterStartDate.substring(0, 4)}-${filterStartDate.substring(4, 6)}-${filterStartDate.substring(6, 8)}`;
             const formattedEnd = `${filterEndDate.substring(0, 4)}-${filterEndDate.substring(4, 6)}-${filterEndDate.substring(6, 8)}`;
-            console.log(`🔍 필터 적용: ${formattedStart} ~ ${formattedEnd}`);
         }
 
-        console.log('🔄 Job 렌더링 시작:', jobs);
         container.innerHTML = jobs.map(job => this.renderJobItem(job)).join('');
 
         // 확장 버튼 이벤트 등록
         const toggleBtns = document.querySelectorAll('.job-toggle');
-        console.log(`📌 토글 버튼 감지됨: ${toggleBtns.length}개`);
         
         toggleBtns.forEach((btn, idx) => {
-            console.log(`📌 버튼 ${idx+1} 이벤트 등록 중...`);
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const jobItem = btn.closest('.job-item');
                 const fileResults = jobItem?.querySelector('.file-results');
-                console.log(`🔘 토글 클릭됨! jobItem=${!!jobItem}, fileResults=${!!fileResults}`);
                 
                 if (fileResults) {
                     const isCurrentlyHidden = fileResults.style.display === 'none';
                     
                     // 파일이 보여질 예정이고, 내용이 아직 없으면 로드
                     if (isCurrentlyHidden && fileResults.innerHTML.trim() === '') {
-                        console.log('📥 파일 결과 로드 중...');
                         const jobId = jobItem?.dataset.jobId;
-                        console.log(`📌 jobId=${jobId}`);
                         if (jobId) {
                             try {
                                 const response = await fetch(`/process/batch/status/${jobId}`);
@@ -826,14 +821,11 @@ class App {
                                     throw new Error(`API 응답 실패: ${response.status}`);
                                 }
                                 const fullJob = await response.json();
-                                console.log('📦 API 응답:', { jobId: fullJob.job_id, resultsLength: fullJob.results?.length, status: fullJob.status });
                                 
                                 if (fullJob.results && Array.isArray(fullJob.results) && fullJob.results.length > 0) {
                                     fileResults.innerHTML = this.renderFileResults(fullJob);
-                                    console.log(`✅ 파일 결과 로드 완료: ${fullJob.results.length}개`);
                                 } else {
                                     fileResults.innerHTML = '<p class="empty-state">처리 결과가 없습니다</p>';
-                                    console.log('⚠️ 결과가 없음');
                                 }
                             } catch (error) {
                                 console.error('❌ 파일 결과 로드 실패:', error);
@@ -858,7 +850,6 @@ class App {
         // 상세보기 버튼 이벤트 (Event Delegation)
         const jobsList = document.getElementById('jobs-list');
         if (jobsList) {
-            console.log('📌 상세보기 버튼 이벤트 위임 등록됨 (#jobs-list)');
             jobsList.addEventListener('click', async (e) => {
                 const btn = e.target.closest('.view-details-btn');
                 if (!btn) return;
@@ -868,7 +859,6 @@ class App {
                 const jobItem = btn.closest('.job-item');
                 const jobId = jobItem?.dataset.jobId;
                 
-                console.log('🔍 상세보기 클릭:', { jobId, fileIndex });
                 
                 if (!jobId) {
                     console.error('❌ jobId 없음');
@@ -877,12 +867,10 @@ class App {
                 
                 // 현재 저장된 job이 results를 가지고 있지 않으면 API에서 조회
                 if (!window.currentJob?.results) {
-                    console.log('📥 Job 데이터 로드 중...');
                     try {
                         const response = await fetch(`/process/batch/status/${jobId}`);
                         if (response.ok) {
                             const fullJob = await response.json();
-                            console.log('✅ 완전한 Job 정보 로드됨:', fullJob);
                             this.showDetailModal(fullJob, fileIndex);
                         } else {
                             alert('파일 정보를 불러올 수 없습니다');
@@ -900,13 +888,11 @@ class App {
 
         // 작업 다운로드 버튼 이벤트
         const downloadBtns = document.querySelectorAll('.job-download-btn');
-        console.log(`📌 다운로드 버튼 감지됨: ${downloadBtns.length}개`);
         
         downloadBtns.forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const jobId = btn.dataset.jobId;
-                console.log('💾 작업 다운로드 클릭:', jobId);
                 
                 if (!jobId) {
                     console.error('❌ jobId 없음');
@@ -1015,7 +1001,6 @@ class App {
     }
 
     showDetailModal(job, fileIndex) {
-        console.log('🔍 showDetailModal 호출:', { job, fileIndex });
         
         // job이 없거나 results가 없는 경우 처리
         if (!job || !job.results || !Array.isArray(job.results)) {
@@ -1031,7 +1016,6 @@ class App {
             return;
         }
         
-        console.log('✅ Result 찾음:', result);
 
         // 모달 헤더
         const modalTitle = document.getElementById('modal-title');
@@ -1130,8 +1114,6 @@ class App {
     }
 
     downloadResults() {
-        console.log('📥 downloadResults() 호출됨');
-        console.log('window.currentDetailResult:', window.currentDetailResult);
         
         if (!window.currentDetailResult) {
             console.error('❌ window.currentDetailResult 없음');
@@ -1200,14 +1182,12 @@ class App {
         link.download = `분석결과_${result.filename || 'report'}_${Date.now()}.csv`;
         link.click();
         URL.revokeObjectURL(link.href);
-        console.log('✅ CSV 다운로드 완료');
     }
 
     /**
      * 작업(Job) 단위로 모든 결과를 CSV로 다운로드
      */
     async downloadJobResults(jobId) {
-        console.log('📥 downloadJobResults() 호출됨:', jobId);
         
         if (!jobId) {
             alert('작업 ID가 없습니다.');
@@ -1222,7 +1202,6 @@ class App {
             }
             
             const job = await response.json();
-            console.log('✅ Job 정보 로드됨:', job);
             
             if (!job.results || job.results.length === 0) {
                 alert('다운로드할 결과가 없습니다.');
@@ -1291,7 +1270,6 @@ class App {
             link.download = `작업결과_${jobId.substring(0, 8)}_${Date.now()}.csv`;
             link.click();
             URL.revokeObjectURL(link.href);
-            console.log('✅ 작업 다운로드 완료:', `${job.results.length}개 파일`);
         } catch (error) {
             console.error('❌ 작업 다운로드 실패:', error);
             throw error;
@@ -1302,7 +1280,6 @@ class App {
      * 배치 캘린더 UI 초기화
      */
     async initializeBatchCalendar() {
-        console.log('🔧 배치 캘린더 초기화...');
         
         // date-range 로드
         await this.loadBatchDateRange();
@@ -1320,7 +1297,6 @@ class App {
     async loadBatchDateRange() {
         try {
             const data = await api.getDateRange();
-            console.log('📅 Date range:', data);
             
             // 범위 정보 표시
             const minDate = data.min_date ? this.formatDateForDisplay(data.min_date) : '미정';
@@ -1335,7 +1311,6 @@ class App {
             
             // TEST_MODE 안내
             if (data.test_mode) {
-                console.log('⚠️ TEST_MODE 활성화 - Mock 날짜 사용');
             }
         } catch (error) {
             console.error('❌ Date range 로드 실패:', error);
@@ -1352,7 +1327,6 @@ class App {
     async loadBatchDateStats() {
         try {
             const data = await api.getDateStats();
-            console.log('📊 Date stats:', data);
             
             // 전역 변수로 저장
             window.batchDateStats = data;
@@ -1369,7 +1343,6 @@ class App {
                     };
                 });
             }
-            console.log('📊 Date status map 생성 완료:', window.dateStatusMap);
         } catch (error) {
             console.error('❌ Date stats 로드 실패:', error);
         }
@@ -1392,13 +1365,11 @@ class App {
         
         // 선택 가능 날짜 설정
         const availableDates = window.batchDateRange?.available_dates || [];
-        console.log('📅 Available dates:', availableDates);
         
         // 최소/최대 날짜 설정
         const minDate = window.batchDateRange?.min_date ? this.convertDateFormat(window.batchDateRange.min_date, 'YYYYMMDD_to_Date') : null;
         const maxDate = window.batchDateRange?.max_date ? this.convertDateFormat(window.batchDateRange.max_date, 'YYYYMMDD_to_Date') : null;
         
-        console.log('📅 Min date:', minDate, 'Max date:', maxDate);
         
         // flatpickr 캘린더 생성 (inline 모드 - 항상 표시)
         flatpickr(calendarEl, {
@@ -1410,15 +1381,12 @@ class App {
             static: false,
             defaultDate: minDate ? [minDate] : [],
             onChange: (selectedDates) => {
-                console.log('📅 onChange triggered:', selectedDates);
                 this.onCalendarDateChange(selectedDates);
             },
             onClose: (selectedDates, dateStr, instance) => {
-                console.log('📅 onClose triggered:', selectedDates, dateStr);
             }
         });
         
-        console.log('✅ 캘린더 초기화 완료');
     }
 
     /**
@@ -1435,7 +1403,6 @@ class App {
      * 캘린더 날짜 변경 이벤트
      */
     onCalendarDateChange(selectedDates) {
-        console.log('📅 Selected dates:', selectedDates);
         
         if (selectedDates.length === 2) {
             const startDate = selectedDates[0];
@@ -1452,7 +1419,6 @@ class App {
                 endDate: endDate
             };
             
-            console.log(`✅ 날짜 범위 선택: ${startStr} ~ ${endStr}`);
             
             // 입력 필드 업데이트
             this.updateDateInputsFromCalendar(startStr, endStr);
@@ -1488,7 +1454,6 @@ class App {
         
         // Set new timer - delay 500ms to allow user to finish selecting
         this.autoAnalysisDebounceTimer = setTimeout(() => {
-            console.log('⏰ Auto-fetching batch analysis data...');
             this.fetchBatchAnalysisData();  // Only fetch data, don't display
             this.autoAnalysisDebounceTimer = null;
         }, 500);
@@ -1513,7 +1478,6 @@ class App {
             
             // 전역 변수 저장 (캐시)
             window.batchAnalysisResult = response;
-            console.log('✨ 분석 데이터 캐시됨:', response);
             
             // Update selection card with file count data from API
             this.updateSelectionCardFromAnalysis(response);
@@ -1553,7 +1517,6 @@ class App {
         // Ensure card is visible
         card.style.display = 'block';
         
-        console.log(`✅ Selection card updated: ${allDates.length} dates, ${totalFileCount} files`);
     }
 
     /**
@@ -1591,7 +1554,6 @@ class App {
             return;
         }
         
-        console.log('🔍 배치 분석 시작...', selectedRange);
         
         try {
             // API 호출
@@ -1600,7 +1562,6 @@ class App {
                 end_date: selectedRange.end.replace(/-/g, '')
             });
             
-            console.log('✨ 분석 결과:', response);
             
             // 전역 변수 저장
             window.batchAnalysisResult = response;
@@ -1760,7 +1721,6 @@ class App {
         
         // "이전 기록 보기" 옵션인 경우 특별 처리
         if (selectedOption.value === 'view_history') {
-            console.log('📋 이전 기록 보기 선택:', selectedRange);
             
             // 필터링 정보를 전역 변수에 저장
             window.historyFilter = {
@@ -1780,11 +1740,6 @@ class App {
             return;
         }
         
-        console.log('▶️ 배치 처리 시작...', {
-            option: selectedOption.value,
-            dateRange: selectedRange
-        });
-        
         try {
             // API 요청 구성
             const request = {
@@ -1793,12 +1748,10 @@ class App {
                 option_id: selectedOption.value
             };
             
-            console.log('📨 Request:', request);
             
             // API 호출
             const response = await api.submitBatchWithOption(request);
             
-            console.log('✅ 처리 시작:', response);
             
             // 현재 작업을 메모리에 저장 (history 페이지에서 표시하기 위함)
             window.currentJob = response;
@@ -2183,7 +2136,6 @@ class App {
             const currentEnd = this.formatDateAsYYYYMMDD(current[1]);
             
             if (currentStart === startStr && currentEnd === endStr) {
-                console.log('⏭️ 캘린더: 이미 같은 범위가 선택됨, 스킵');
                 return;
             }
         }
@@ -2198,7 +2150,6 @@ class App {
         // change 이벤트 핸들러 복원
         calendarEl._flatpickr.config.onChange = onChangeHandlers;
         
-        console.log(`✅ 캘린더 업데이트 (이벤트 무시): ${startStr} ~ ${endStr}`);
     }
 
     /**
@@ -2215,7 +2166,6 @@ class App {
         const endDate = new Date(endStr);
         
         calendarEl._flatpickr.setDate([startDate, endDate], true);
-        console.log(`✅ 캘린더 업데이트: ${startStr} ~ ${endStr}`);
     }
 }
 
@@ -2230,7 +2180,6 @@ function closeDetailModal() {
 
 // 앱 초기화
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('📄 DOM 로드 완료');
     try {
         window.app = new App();
     } catch (error) {
