@@ -223,9 +223,11 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
     logger.info("=" * 80)
     logger.info("[BATCH_ASYNC_START] job_id=%s, date_range=%s~%s, option_id=%s", 
                 job_id, req.start_date, req.end_date, req.option_id)
+    import sys; sys.stdout.flush()  # Force flush
     
     try:
         # Step 1: Handle option_id for SELECT_TARGET feature
+        logger.info("[BATCH_STEP_1] Checking option_id: %s", req.option_id)
         if req.option_id == "view_history":
             logger.info("[BATCH_OPTION] option_id='view_history': returning without processing")
             db.update_job_status(job_id, "completed")
@@ -234,11 +236,13 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
             return
         
         # Step 2: Adjust force_reprocess based on option_id
+        logger.info("[BATCH_STEP_2] Checking force_reprocess option")
         if req.option_id == "reprocess" or req.option_id == "reprocess_all":
             req.force_reprocess = True
             logger.info("[BATCH_OPTION] option_id='%s': setting force_reprocess=true", req.option_id)
         
         logger.info("[BATCH_STATUS_UPDATE] Updating status to 'running'")
+        sys.stdout.flush()  # Force flush
         db.update_job_status(job_id, "running")
         logger.info("[BATCH_STATUS_OK] Status updated successfully")
 
