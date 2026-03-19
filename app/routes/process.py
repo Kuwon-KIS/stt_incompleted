@@ -718,13 +718,11 @@ async def process_batch_submit(req: BatchProcessRequest):
         logger.exception("[BATCH_SUBMIT_DB_ERROR] Failed to create job: %s", e)
         raise
 
-    # 배치 처리 실행 (async로)
-    logger.info("[BATCH_SUBMIT_ASYNC] Executing batch processing: %s", job_id)
-    try:
-        await run_batch_async(job_id, req)
-        logger.info("[BATCH_ASYNC_OK] Batch execution completed: %s", job_id)
-    except Exception as e:
-        logger.exception("[BATCH_ASYNC_ERROR] Batch execution failed: %s", e)
+    # 배치 처리 실행 (백그라운드 비동기 작업)
+    logger.info("[BATCH_SUBMIT_ASYNC] Starting background batch processing: %s", job_id)
+    # asyncio.create_task() 사용 → 백그라운드에서 실행 (대기 안 함)
+    asyncio.create_task(run_batch_async(job_id, req))
+    logger.info("[BATCH_BACKGROUND_STARTED] Background task scheduled: %s", job_id)
 
     response = {
         "job_id": job_id,
