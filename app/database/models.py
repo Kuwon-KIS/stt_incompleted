@@ -50,7 +50,12 @@ class BatchResult:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         d = asdict(self)
-        d['detected_issues'] = self.detected_issues  # JSON 문자열이 아니라 리스트로 유지
+        # Serialize detected_issues to JSON string for storage
+        try:
+            d['detected_issues'] = json.dumps(self.detected_issues, ensure_ascii=False)
+        except (TypeError, ValueError):
+            # Fallback to empty list if serialization fails
+            d['detected_issues'] = json.dumps([])
         d['created_at'] = self.created_at.isoformat()
         d['date'] = self.file_date  # alias: date -> file_date
         return d

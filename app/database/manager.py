@@ -364,6 +364,13 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         try:
+            # Serialize detected_issues to JSON with proper error handling
+            try:
+                detected_issues_json = json.dumps(result.detected_issues, ensure_ascii=False)
+            except (TypeError, ValueError) as json_err:
+                logger.warning(f"Failed to serialize detected_issues: {json_err}. Using empty list.")
+                detected_issues_json = json.dumps([])
+            
             cursor.execute("""
                 INSERT INTO batch_results 
                 (job_id, file_date, filename, success, text_content, category, 
@@ -372,7 +379,7 @@ class DatabaseManager:
             """, (
                 result.job_id, result.file_date, result.filename, result.success,
                 result.text_content, result.category, result.summary, result.omission_num,
-                json.dumps(result.detected_issues), result.error_message,
+                detected_issues_json, result.error_message,
                 result.processing_time_ms, result.created_at
             ))
             conn.commit()
@@ -380,7 +387,7 @@ class DatabaseManager:
             logger.info(f"Result created: {result_id} for job {result.job_id}")
             return result_id
         except Exception as e:
-            logger.error(f"Failed to create result: {e}")
+            logger.error(f"Failed to create result: {e}", exc_info=True)
             raise
         finally:
             conn.close()
@@ -398,6 +405,17 @@ class DatabaseManager:
 
             results = []
             for row in rows:
+                # Parse detected_issues from JSON with error handling
+                detected_issues = []
+                if row['detected_issues']:
+                    try:
+                        detected_issues = json.loads(row['detected_issues'])
+                        if not isinstance(detected_issues, list):
+                            detected_issues = []
+                    except (json.JSONDecodeError, TypeError) as json_err:
+                        logger.warning(f"Failed to parse detected_issues for job {job_id}: {json_err}")
+                        detected_issues = []
+                
                 results.append(BatchResult(
                     id=row['id'],
                     job_id=row['job_id'],
@@ -408,7 +426,7 @@ class DatabaseManager:
                     category=row['category'],
                     summary=row['summary'],
                     omission_num=row['omission_num'],
-                    detected_issues=json.loads(row['detected_issues']) if row['detected_issues'] else [],
+                    detected_issues=detected_issues,
                     error_message=row['error_message'],
                     processing_time_ms=row['processing_time_ms'],
                     created_at=datetime.fromisoformat(row['created_at'])

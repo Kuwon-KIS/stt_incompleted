@@ -605,6 +605,24 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
         for idx, result_data in enumerate(results):
             try:
                 logger.debug("[BATCH_DB_INSERT_DETAIL_%d] Processing result: %s", idx, result_data.get("filename"))
+                
+                # detected_issues를 JSON 문자열로 변환 (datetime 등도 처리)
+                detected_issues = result_data.get("detected_issues", [])
+                try:
+                    # Ensure detected_issues is a valid JSON-serializable list
+                    if isinstance(detected_issues, str):
+                        # Already a JSON string, parse and re-serialize to validate
+                        import json
+                        detected_issues = json.loads(detected_issues)
+                    elif not isinstance(detected_issues, list):
+                        detected_issues = []
+                    
+                    logger.debug("[BATCH_DB_INSERT_%d_ISSUES] detected_issues: %d items", idx, len(detected_issues))
+                except Exception as parse_err:
+                    logger.warning("[BATCH_DB_INSERT_%d_PARSE_ERROR] Failed to parse detected_issues: %s", 
+                                  idx, str(parse_err))
+                    detected_issues = []
+                
                 result = BatchResult(
                     job_id=job_id,
                     file_date=result_data["date"],
@@ -614,12 +632,14 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     category=result_data.get("category"),
                     summary=result_data.get("summary"),
                     omission_num=int(result_data.get("omission_num", 0)),
-                    detected_issues=result_data.get("detected_issues", []),
+                    detected_issues=detected_issues,  # 이미 리스트로 변환됨
                     processing_time_ms=result_data.get("processing_time_ms", 0),
                     created_at=result_data.get("created_at", datetime.now(timezone.utc))
                 )
                 db.create_result(result)
-                logger.info("[BATCH_DB_INSERT_OK_%d] Saved result for %s", idx, result_data.get("filename"))
+                logger.info("[BATCH_DB_INSERT_OK_%d] Saved result for %s (omission_num=%d, issues=%d)", 
+                           idx, result_data.get("filename"), 
+                           int(result_data.get("omission_num", 0)), len(detected_issues))
             except Exception as db_error:
                 logger.error("[BATCH_DB_ERROR] Failed to save result for %s: %s", 
                            result_data.get("filename"), str(db_error), exc_info=True)
