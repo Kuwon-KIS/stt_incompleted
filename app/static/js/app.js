@@ -20,12 +20,12 @@ class App {
             
             // 초기 상태 로드
             await this.refreshStatus();
+            // Dashboard 진입 시 통계 데이터 로드
+            await this.loadDashboardStats();
             
-            
-            // 주기적 상태 업데이트 (기본: 1분에 한 번)
-            // 페이지 전환 시 조정됨 (배치/히스토리: 5분)
-            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 60000);
-            this.statusCheckIntervalMs = 60000;
+            // 주기적 상태 업데이트 (모든 페이지: 180초)
+            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 180000);
+            this.statusCheckIntervalMs = 180000;
             
             
         } catch (error) {
@@ -182,6 +182,15 @@ class App {
             });
         }
 
+        // Dashboard 수동 갱신 버튼
+        const refreshStatsBtn = document.getElementById('refresh-stats-btn');
+        if (refreshStatsBtn) {
+            refreshStatsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.refreshDashboardStats();
+            });
+        }
+
         // Agent API Info Icon Hover Tooltip
         const agentInfoIcon = document.getElementById('agent-info-icon');
         if (agentInfoIcon) {
@@ -218,21 +227,11 @@ class App {
 
         this.currentPage = pageName;
 
-        // 페이지별 상태 체크 빈도 조정
-        // 대시보드: 1분마다 (SFTP 상태 체크)
-        // 배치/히스토리: 5분마다 (SFTP 호출 최소화)
-        if (pageName === 'dashboard') {
-            clearInterval(this.statusCheckInterval);
-            this.statusCheckIntervalMs = 60000;
-            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 60000);
-        } else if (pageName === 'batch' || pageName === 'history') {
-            clearInterval(this.statusCheckInterval);
-            this.statusCheckIntervalMs = 300000;
-            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 300000);
-        }
-
         // Page-specific setup
-        if (pageName === 'batch') {
+        if (pageName === 'dashboard') {
+            // Dashboard 진입 시 통계 데이터 로드
+            this.loadDashboardStats();
+        } else if (pageName === 'batch') {
             this.initializeBatchCalendar();
         } else if (pageName === 'history') {
             this.loadJobHistory();
@@ -297,10 +296,6 @@ class App {
                 statusText.textContent = '정상';
             }
         }
-
-        // Load date statistics and recent jobs
-        this.loadDateStatistics();
-        this.loadRecentJobs();
     }
 
     updateDeploymentStatus(systemStatus) {
@@ -387,6 +382,46 @@ class App {
         const tooltip = document.getElementById('agent-tooltip');
         if (tooltip) {
             tooltip.style.display = 'none';
+        }
+    }
+
+    async loadDashboardStats() {
+        // Dashboard 진입 시 통계 데이터만 로드 (health check와 분리)
+        try {
+            await this.loadDateStatistics();
+            await this.loadRecentJobs();
+        } catch (error) {
+            console.error('Dashboard 통계 로드 실패:', error);
+        }
+    }
+
+    async refreshDashboardStats() {
+        // 수동 갱신 버튼 클릭 시 호출
+        const btn = document.getElementById('refresh-stats-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '새로고침 중...';
+        }
+
+        try {
+            await this.loadDashboardStats();
+            // 성공 피드백
+            if (btn) {
+                btn.textContent = '갱신됨!';
+                setTimeout(() => {
+                    btn.textContent = '수동 갱신';
+                    btn.disabled = false;
+                }, 1500);
+            }
+        } catch (error) {
+            console.error('통계 갱신 실패:', error);
+            if (btn) {
+                btn.textContent = '갱신 실패';
+                setTimeout(() => {
+                    btn.textContent = '수동 갱신';
+                    btn.disabled = false;
+                }, 2000);
+            }
         }
     }
 

@@ -49,7 +49,7 @@ VOLUME ["/app/app/data"]
 
 EXPOSE 8002
 
-# Health check
+# Health check (interval: 30초, timeout: 10초, 3회 실패 시 unhealthy)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8002/health')" || exit 1
 
