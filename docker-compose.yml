@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  stt-post-review:
+    image: stt-post-review:latest
+    container_name: stt-post-review
+    ports:
+      - "8002:8002"
+    
+    # Volume mounts for data persistence and logging
+    volumes:
+      # Main data volume (database, logs, etc.)
+      - stt-data:/app/app/data
+      # Optional: separate log volume for easier backup/rotation
+      # - stt-logs:/app/app/data/logs
+    
+    # Environment configuration
+    env_file:
+      - environments/.env.dev
+    
+    # Environment variables (can override .env file)
+    environment:
+      - APP_ENV=dev
+      - LOG_LEVEL=INFO
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    
+    # Networks (optional, for multi-service setup)
+    # networks:
+    #   - stt-network
+
+# Persistent volumes
+volumes:
+  stt-data:
+    driver: local
+  # stt-logs:
+  #   driver: local
+
+# Networks (optional)
+# networks:
+#   stt-network:
+#     driver: bridge

@@ -37,6 +37,12 @@ COPY environments/ ./environments/
 # Copy templates if they exist (optional)
 COPY app/templates/ ./app/templates/
 
+# Create data and logs directories with proper permissions
+RUN mkdir -p /app/app/data/logs && chmod 755 /app/app/data/logs
+
+# Persistent volumes for data and logs
+VOLUME ["/app/app/data"]
+
 # Runtime environment loading:
 # - APP_ENV environment variable determines which .env file to load
 # - Can be overridden at runtime: docker run -e APP_ENV=dev ...

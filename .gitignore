@@ -32,9 +32,12 @@ temp/
 
 # Logs and Database
 *.log
+*.log.*
 *.db
 logs/
 app/data/
+app/data/logs/*.log
+app/data/logs/*.log.*
 
 # Build outputs
 output/

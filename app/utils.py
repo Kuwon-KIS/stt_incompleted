@@ -3,6 +3,7 @@ Utility functions for STT processing system.
 """
 
 import logging
+import logging.handlers
 import os
 import re
 from typing import Optional, Dict, Any
@@ -68,17 +69,51 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     """
     Configure logging for the application.
     
+    - Console output: Always enabled
+    - File output: Saves to app/data/logs/stt.log with rotation
+    - Rotation: Max 5 files, 100MB per file
+    
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         
     Returns:
         Configured logger
     """
-    logging.basicConfig(
-        format='%(asctime)s %(levelname)s %(name)s %(message)s',
-        level=getattr(logging, log_level.upper(), logging.INFO)
+    # Create logs directory if it doesn't exist
+    log_dir = "app/data/logs"
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Logger configuration
+    logger = logging.getLogger()
+    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    
+    # Remove existing handlers to avoid duplicates
+    logger.handlers.clear()
+    
+    # Format
+    formatter = logging.Formatter(
+        '%(asctime)s %(levelname)s %(name)s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
-    return logging.getLogger(__name__)
+    
+    # Console Handler (stdout)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    # File Handler with Rotation (100MB max, keep 5 files)
+    log_file = os.path.join(log_dir, "stt.log")
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=100 * 1024 * 1024,  # 100MB
+        backupCount=5                 # Keep 5 rotated files
+    )
+    file_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    return logger
 
 
 def format_date_range(start_date: str, end_date: str) -> str:
