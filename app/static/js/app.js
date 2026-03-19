@@ -23,9 +23,7 @@ class App {
             // Dashboard 진입 시 통계 데이터 로드
             await this.loadDashboardStats();
             
-            // 주기적 상태 업데이트 (모든 페이지: 180초)
-            this.statusCheckInterval = setInterval(() => this.refreshStatus(), 180000);
-            this.statusCheckIntervalMs = 180000;
+            // 자동 갱신 없음 - 페이지 새로고침으로만 업데이트
             
             
         } catch (error) {
@@ -179,15 +177,6 @@ class App {
                 if (e.target === modal) {
                     closeDetailModal();
                 }
-            });
-        }
-
-        // Dashboard 수동 갱신 버튼
-        const refreshStatsBtn = document.getElementById('refresh-stats-btn');
-        if (refreshStatsBtn) {
-            refreshStatsBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.refreshDashboardStats();
             });
         }
 
@@ -392,36 +381,6 @@ class App {
             await this.loadRecentJobs();
         } catch (error) {
             console.error('Dashboard 통계 로드 실패:', error);
-        }
-    }
-
-    async refreshDashboardStats() {
-        // 수동 갱신 버튼 클릭 시 호출
-        const btn = document.getElementById('refresh-stats-btn');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = '새로고침 중...';
-        }
-
-        try {
-            await this.loadDashboardStats();
-            // 성공 피드백
-            if (btn) {
-                btn.textContent = '갱신됨!';
-                setTimeout(() => {
-                    btn.textContent = '수동 갱신';
-                    btn.disabled = false;
-                }, 1500);
-            }
-        } catch (error) {
-            console.error('통계 갱신 실패:', error);
-            if (btn) {
-                btn.textContent = '갱신 실패';
-                setTimeout(() => {
-                    btn.textContent = '수동 갱신';
-                    btn.disabled = false;
-                }, 2000);
-            }
         }
     }
 
