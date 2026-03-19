@@ -429,10 +429,12 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                 except Exception as close_err:
                     logger.warning("[BATCH_SFTP_LISTING_CLOSE_ERROR] Error closing listing connection: %s", close_err)
                 
-                # Create a dedicated thread pool for SFTP reads (limit concurrency to 3 threads)
+                # Create a dedicated thread pool for SFTP reads (limit concurrency via config)
                 # This prevents Paramiko thread-safety issues and executor pool exhaustion
-                sftp_read_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sftp-read-")
-                logger.info("[BATCH_SFTP_EXECUTOR] Created ThreadPoolExecutor with max_workers=3")
+                # BATCH_CONCURRENCY read from: .env.local (2), .env.prod (8), or default (4)
+                max_workers = config.BATCH_CONCURRENCY
+                sftp_read_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sftp-read-")
+                logger.info("[BATCH_SFTP_EXECUTOR] Created ThreadPoolExecutor with max_workers=%d (from BATCH_CONCURRENCY config)", max_workers)
                 
                 def read_file_with_new_connection(file_path: str) -> str:
                     """
