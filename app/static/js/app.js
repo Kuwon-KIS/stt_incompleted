@@ -15,6 +15,7 @@ class App {
         this.isIdle = false;  // Whether in idle mode (no active jobs)
         this.noActiveJobCount = 0;  // Count consecutive polls with no active jobs
         this.idleThreshold = 5;  // Switch to idle mode after 5 consecutive no-active-job polls
+        this.jobDetailsCache = new Map();  // Cache detailed jobs for filename search
         this.init();
     }
 
@@ -871,6 +872,15 @@ class App {
 
         container.innerHTML = jobs.map(job => this.renderJobItem(job)).join('');
 
+        // Build searchable metadata safely via dataset assignment (no HTML attribute escaping issues).
+        const jobItems = container.querySelectorAll('.job-item');
+        jobItems.forEach((jobItem, index) => {
+            const job = jobs[index];
+            if (job) {
+                this.setJobSearchMetadata(jobItem, job);
+            }
+        });
+
         // 각 job item의 이벤트 리스너 등록
         document.querySelectorAll('.job-item').forEach(jobElement => {
             this.attachJobItemEventListeners(jobElement);
@@ -1211,15 +1221,104 @@ class App {
         if (!searchInput) return;
 
         const searchText = searchInput.value.toLowerCase();
-        const statusFilterValue = statusFilter ? statusFilter.value : '';
+        const statusFilterValue = statusFilter ? statusFilter.value.toLowerCase() : '';
 
         document.querySelectorAll('.job-item').forEach(jobItem => {
-            const jobId = jobItem.dataset.jobId?.toLowerCase() || '';
-            const matchesSearch = !searchText || jobId.includes(searchText);
-            const matchesStatus = !statusFilterValue || true;
+            const searchableText = (jobItem.dataset.searchText || '').toLowerCase();
+            const jobStatus = (jobItem.dataset.status || '').toLowerCase();
+
+            const matchesSearch = !searchText || searchableText.includes(searchText);
+            const matchesStatus = !statusFilterValue || jobStatus === statusFilterValue;
 
             jobItem.style.display = (matchesSearch && matchesStatus) ? 'block' : 'none';
+
+            // If search misses and filenames are not indexed yet, lazily hydrate once per job.
+            if (!matchesSearch && matchesStatus && searchText) {
+                this.hydrateJobSearchMetadata(jobItem);
+            }
         });
+    }
+
+    buildJobSearchText(job) {
+        const parts = [];
+
+        const jobId = String(job?.job_id || job?.id || '').trim();
+        if (jobId) {
+            parts.push(jobId);
+        }
+
+        const dateRange = String(job?.date_range || '').trim();
+        if (dateRange) {
+            parts.push(dateRange);
+        } else {
+            const startDate = String(job?.start_date || '').trim();
+            const endDate = String(job?.end_date || '').trim();
+            if (startDate || endDate) {
+                parts.push(`${startDate} ${endDate}`.trim());
+            }
+        }
+
+        if (Array.isArray(job?.results)) {
+            job.results.forEach((result) => {
+                const filename = String(result?.filename || '').trim();
+                if (filename) {
+                    parts.push(filename);
+                }
+            });
+        }
+
+        return parts.join(' ').toLowerCase();
+    }
+
+    setJobSearchMetadata(jobItem, job) {
+        if (!jobItem || !job) {
+            return;
+        }
+
+        const status = String(job.status || '').toLowerCase();
+        jobItem.dataset.status = status;
+        jobItem.dataset.searchText = this.buildJobSearchText(job);
+        jobItem.dataset.searchHydrated = Array.isArray(job.results) ? 'true' : 'false';
+        jobItem.dataset.searchLoading = 'false';
+    }
+
+    async hydrateJobSearchMetadata(jobItem) {
+        if (!jobItem) {
+            return;
+        }
+
+        const jobId = jobItem.dataset.jobId;
+        const isHydrated = jobItem.dataset.searchHydrated === 'true';
+        const isLoading = jobItem.dataset.searchLoading === 'true';
+
+        if (!jobId || isHydrated || isLoading) {
+            return;
+        }
+
+        jobItem.dataset.searchLoading = 'true';
+
+        try {
+            let fullJob = this.jobDetailsCache.get(jobId);
+            if (!fullJob) {
+                const response = await fetch(`/process/batch/status/${jobId}`);
+                if (!response.ok) {
+                    return;
+                }
+                fullJob = await response.json();
+                this.jobDetailsCache.set(jobId, fullJob);
+            }
+
+            const hydratedText = this.buildJobSearchText(fullJob);
+            const existingText = (jobItem.dataset.searchText || '').toLowerCase();
+            jobItem.dataset.searchText = `${existingText} ${hydratedText}`.trim();
+            jobItem.dataset.status = String(fullJob.status || jobItem.dataset.status || '').toLowerCase();
+            jobItem.dataset.searchHydrated = 'true';
+        } catch (error) {
+            console.debug('검색 인덱스 보강 실패:', error);
+        } finally {
+            jobItem.dataset.searchLoading = 'false';
+            this.filterJobs();
+        }
     }
 
     downloadResults() {
