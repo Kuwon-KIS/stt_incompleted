@@ -66,7 +66,8 @@ class BatchAnalysisRequest(BaseModel):
     """Batch analysis request."""
     start_date: str  # YYYYMMDD format
     end_date: str    # YYYYMMDD format
-    include_empty: bool = False  # Include dates with 0 files (default: false to hide empty dates)
+    include_empty: bool = False  # Include dates with 0 files (default: false)
+    available_dates: Optional[List[str]] = None  # Pre-fetched available dates to avoid redundant SFTP call
 
 
 class BatchAnalysisResponse(BaseModel):
@@ -363,53 +364,60 @@ async def analyze_batch(req: BatchAnalysisRequest):
         HTTPException: If analysis fails
     """
     try:
-        logger.info(f"Analyzing batch: [{req.start_date}, {req.end_date}]")
+        logger.info(f" [BATCH_ANALYSIS] START [{req.start_date}, {req.end_date}]")
         
-        # Step 1: Get available dates from SFTP/Mock
+        # Step 1: Get available dates from SFTP/Mock (or use provided ones to avoid redundant call)
         available_dates = []
-        try:
-            if config.APP_ENV == "local":
-                from app.sftp_client import MockSFTPClient
-                client = MockSFTPClient(
-                    host=config.SFTP_HOST or "mock",
-                    username=config.SFTP_USERNAME,
-                    password=config.SFTP_PASSWORD
-                )
-                available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
-            else:
-                try:
-                    client = create_sftp_client(
-                        host=config.SFTP_HOST,
-                        port=config.SFTP_PORT,
+        
+        # Use pre-fetched available_dates if provided
+        if req.available_dates:
+            available_dates = req.available_dates
+            logger.info(f"📊 [BATCH_ANALYSIS] Using provided available_dates: {len(available_dates)} dates")
+        else:
+            logger.info(f"📊 [BATCH_ANALYSIS] Fetching available_dates from SFTP/Mock...")
+            try:
+                if config.APP_ENV == "local":
+                    from app.sftp_client import MockSFTPClient
+                    client = MockSFTPClient(
+                        host=config.SFTP_HOST or "mock",
                         username=config.SFTP_USERNAME,
-                        password=config.SFTP_PASSWORD,
-                        pkey=config.SFTP_KEY
+                        password=config.SFTP_PASSWORD
                     )
-                    available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH)
-                    # Keep client open for file counting in Step 4
-                except Exception as e:
-                    logger.warning(f"SFTP failed: {e}")
-                    if config.TEST_MODE:
-                        logger.warning("Using mock fallback (TEST_MODE=true)")
-                        from app.sftp_client import MockSFTPClient
-                        client = MockSFTPClient(
-                            host=config.SFTP_HOST or "mock",
+                    available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
+                else:
+                    try:
+                        client = create_sftp_client(
+                            host=config.SFTP_HOST,
+                            port=config.SFTP_PORT,
                             username=config.SFTP_USERNAME,
-                            password=config.SFTP_PASSWORD
+                            password=config.SFTP_PASSWORD,
+                            pkey=config.SFTP_KEY
                         )
-                        available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
-                    else:
-                        raise HTTPException(
-                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail=f"SFTP 연결 실패: {str(e)}"
-                        )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Failed to get available dates: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"날짜 범위 조회 실패: {str(e)}"
+                        available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH)
+                        # Keep client open for file counting in Step 4
+                    except Exception as e:
+                        logger.warning(f"SFTP failed: {e}")
+                        if config.TEST_MODE:
+                            logger.warning("Using mock fallback (TEST_MODE=true)")
+                            from app.sftp_client import MockSFTPClient
+                            client = MockSFTPClient(
+                                host=config.SFTP_HOST or "mock",
+                                username=config.SFTP_USERNAME,
+                                password=config.SFTP_PASSWORD
+                            )
+                            available_dates = client.get_available_dates(root_path=config.SFTP_ROOT_PATH or "/")
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail=f"SFTP 연결 실패: {str(e)}"
+                            )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to get available dates: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"날짜 범위 조회 실패: {str(e)}"
             )
         
         # Step 2: Get completed dates from database

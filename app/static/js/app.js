@@ -1431,11 +1431,15 @@ class App {
             // 토글 상태 읽기
             const includeEmpty = document.getElementById('include-empty-toggle')?.checked || false;
             
+            // 이미 조회한 available_dates를 함께 전달 (SFTP 중복 호출 제거)
+            const availableDates = window.batchDateRange?.available_dates || null;
+            
             // API 호출
             const response = await api.analyzeBatch({
                 start_date: selectedRange.start.replace(/-/g, ''),
                 end_date: selectedRange.end.replace(/-/g, ''),
-                include_empty: includeEmpty
+                include_empty: includeEmpty,
+                available_dates: availableDates
             });
             
             // 전역 변수 저장 (캐시)
