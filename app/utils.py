@@ -113,8 +113,10 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     
-    # Suppress verbose paramiko logging
+    # Suppress verbose paramiko logging (all levels)
+    logging.getLogger("paramiko").setLevel(logging.WARNING)
     logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
+    logging.getLogger("paramiko.transport.sftp").setLevel(logging.WARNING)
     
     return logger
 
