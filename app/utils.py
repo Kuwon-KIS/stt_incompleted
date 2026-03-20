@@ -113,10 +113,14 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     
-    # Suppress verbose paramiko logging (all levels)
-    logging.getLogger("paramiko").setLevel(logging.WARNING)
-    logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
-    logging.getLogger("paramiko.transport.sftp").setLevel(logging.WARNING)
+    # Suppress verbose paramiko logging - set level to WARNING and disable propagation
+    for logger_name in ["paramiko", "paramiko.transport", "paramiko.transport.sftp"]:
+        param_logger = logging.getLogger(logger_name)
+        param_logger.setLevel(logging.WARNING)
+        param_logger.propagate = False
+        # Add NullHandler to prevent output even if propagated
+        if not any(isinstance(h, logging.NullHandler) for h in param_logger.handlers):
+            param_logger.addHandler(logging.NullHandler())
     
     return logger
 
