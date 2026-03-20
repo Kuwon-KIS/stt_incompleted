@@ -5,6 +5,14 @@
 
 ---
 
+## 배치 처리 관련 신규 실행 계획
+
+- BATCH_TAB_SFTP_OPTIMIZATION_PLAN.md
+- BATCH_LAST_DATE_DEFAULT_PLAN.md
+- BATCH_EMPTY_DATE_FILTER_TOGGLE_PLAN.md
+
+---
+
 ## 📋 프로젝트 개요
 
 ### 현재 상태

@@ -1255,6 +1255,17 @@ class App {
             // 전역 변수로 저장 (캘린더 초기화에 사용)
             window.batchDateRange = data;
             
+            // 토글 이벤트 리스너 추가 (0개 파일 날짜 표시 토글)
+            const toggle = document.getElementById('include-empty-toggle');
+            if (toggle && !toggle.hasListener) {
+                toggle.addEventListener('change', () => {
+                    console.log('📊 토글 변경됨 - 분석 재조회:', toggle.checked);
+                    // 토글 상태 변경 후 자동으로 분석 재조회
+                    this.scheduleAutoAnalysis();
+                });
+                toggle.hasListener = true;
+            }
+            
             // TEST_MODE 안내
             if (data.test_mode) {
             }
@@ -1318,6 +1329,7 @@ class App {
         
         
         // flatpickr 캘린더 생성 (inline 모드 - 항상 표시)
+        // 기본 선택은 시작일(min)이 아닌 마지막일(max)로 설정
         flatpickr(calendarEl, {
             mode: 'range',
             dateFormat: 'Y-m-d',
@@ -1325,7 +1337,7 @@ class App {
             maxDate: maxDate,
             inline: true,  // 인라인 캘린더로 항상 표시
             static: false,
-            defaultDate: minDate ? [minDate] : [],
+            defaultDate: maxDate ? [maxDate] : [],
             onChange: (selectedDates) => {
                 this.onCalendarDateChange(selectedDates);
             },
@@ -1416,10 +1428,14 @@ class App {
         }
         
         try {
+            // 토글 상태 읽기
+            const includeEmpty = document.getElementById('include-empty-toggle')?.checked || false;
+            
             // API 호출
             const response = await api.analyzeBatch({
                 start_date: selectedRange.start.replace(/-/g, ''),
-                end_date: selectedRange.end.replace(/-/g, '')
+                end_date: selectedRange.end.replace(/-/g, ''),
+                include_empty: includeEmpty
             });
             
             // 전역 변수 저장 (캐시)

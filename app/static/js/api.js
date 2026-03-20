@@ -118,12 +118,14 @@ class API {
      * @param {Object} batchData
      *   - start_date: 시작 날짜 (YYYYMMDD)
      *   - end_date: 종료 날짜 (YYYYMMDD)
+     *   - include_empty: 파일 0개 날짜 포함 여부 (기본: false)
      * @returns {Object} {case, user_range, completed_range, overlap_dates, new_dates, options}
      */
     async analyzeBatch(batchData) {
         return this.post('/api/admin/batch-analysis', {
             start_date: batchData.start_date,
             end_date: batchData.end_date,
+            include_empty: batchData.include_empty || false
         });
     }
 

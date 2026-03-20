@@ -66,6 +66,7 @@ class BatchAnalysisRequest(BaseModel):
     """Batch analysis request."""
     start_date: str  # YYYYMMDD format
     end_date: str    # YYYYMMDD format
+    include_empty: bool = False  # Include dates with 0 files (default: false to hide empty dates)
 
 
 class BatchAnalysisResponse(BaseModel):
@@ -473,7 +474,25 @@ async def analyze_batch(req: BatchAnalysisRequest):
                 except Exception as e:
                     logger.warning(f"[BATCH_ANALYSIS] Error closing SFTP client: {e}")
         
-        # Step 5: Convert to response format
+        # Step 5: Filter out empty dates if include_empty=False
+        if not req.include_empty:
+            # Remove dates with 0 files from files_per_date and new_dates
+            non_empty_dates = [date for date in analysis.new_dates if files_per_date.get(date, 0) > 0]
+            empty_dates = [date for date in analysis.new_dates if files_per_date.get(date, 0) == 0]
+            
+            if empty_dates:
+                logger.info(f"[BATCH_ANALYSIS] Filtering out {len(empty_dates)} empty dates: {empty_dates}")
+            
+            # Update analysis.new_dates to only include non-empty dates
+            analysis.new_dates = non_empty_dates
+            
+            # Recalculate total_files_to_process for non-empty dates only
+            total_files_to_process = sum(files_per_date.get(date, 0) for date in non_empty_dates)
+            
+            # Filter files_per_date to only include non-empty dates
+            files_per_date = {date: files_per_date[date] for date in non_empty_dates}
+        
+        # Step 6: Convert to response format
         response_options = [
             BatchAnalysisOption(
                 option_id=opt.option_id,
