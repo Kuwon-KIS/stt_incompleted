@@ -59,7 +59,14 @@ class AgentDetector(DetectionStrategy):
             # Extract omission information
             omission_steps = agent_result.get("omission_steps", [])
             omission_reasons = agent_result.get("omission_reasons", [])
-            omission_num = int(agent_result.get("omission_num", 0))
+            omission_num_raw = agent_result.get("omission_num", 0)
+            try:
+                if omission_num_raw is None or str(omission_num_raw).strip() == "None":
+                    omission_num = 0
+                else:
+                    omission_num = int(omission_num_raw)
+            except (TypeError, ValueError):
+                omission_num = 0
             
             # Validate that steps and reasons are paired
             if len(omission_steps) != len(omission_reasons):
@@ -124,8 +131,8 @@ class AgentDetector(DetectionStrategy):
         Detect incomplete sales elements using AI Agent API.
         
         Args:
-            text: Main content to analyze
-            prompt: User query/prompt (used directly)
+            text: Main content (kept for interface compatibility)
+            prompt: User query used as Agent input
             
         Returns:
             Detection result dictionary
@@ -151,12 +158,13 @@ class AgentDetector(DetectionStrategy):
                 agent_endpoint = self.agent_url
                 logger.debug("Using Real agent endpoint format")
             
+            # Memo format: Agent receives only chat_thread_id + parameters.user_query.
+            user_query = prompt if prompt is not None else ""
             payload = {
+                "chat_thread_id": "",
                 "parameters": {
-                    "user_query": prompt,
-                    "context": text
-                },
-                "use_streaming": self.use_streaming
+                    "user_query": user_query
+                }
             }
             
             headers = {
@@ -165,7 +173,12 @@ class AgentDetector(DetectionStrategy):
             if self.auth_header:
                 headers["Authorization"] = self.auth_header
             
-            logger.debug("Agent request: url=%s, agent=%s", agent_endpoint, self.agent_name)
+            logger.debug(
+                "Agent request: url=%s, agent=%s, user_query_len=%d",
+                agent_endpoint,
+                self.agent_name,
+                len(str(user_query))
+            )
             
             # Execute requests.post() in executor to avoid blocking event loop
             # Using a wrapper function to properly pass keyword arguments

@@ -403,6 +403,29 @@ class DatabaseManager:
             except (TypeError, ValueError) as json_err:
                 logger.warning(f"Failed to serialize detected_issues: {json_err}. Using empty list.")
                 detected_issues_json = json.dumps([])
+
+            # Normalize fields to SQLite-friendly scalar values.
+            # on-prem responses may return list/dict for summary/category unexpectedly.
+            def _normalize_text(value: Any) -> Optional[str]:
+                if value is None:
+                    return None
+                if isinstance(value, str):
+                    return value
+                if isinstance(value, (list, dict)):
+                    try:
+                        return json.dumps(value, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        return str(value)
+                return str(value)
+
+            summary = _normalize_text(result.summary)
+            category = _normalize_text(result.category)
+            text_content = _normalize_text(result.text_content)
+
+            try:
+                omission_num = int(result.omission_num) if result.omission_num is not None else 0
+            except (TypeError, ValueError):
+                omission_num = 0
             
             cursor.execute("""
                 INSERT INTO batch_results 
@@ -411,7 +434,7 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 result.job_id, result.file_date, result.filename, result.success,
-                result.text_content, result.category, result.summary, result.omission_num,
+                text_content, category, summary, omission_num,
                 detected_issues_json, result.error_message,
                 result.processing_time_ms, result.created_at
             ))

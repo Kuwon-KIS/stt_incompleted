@@ -159,19 +159,38 @@ def process_sync(req: ProcessRequest) -> dict:
 
     logger.info("fetched remote file length=%d", len(text) if text is not None else 0)
 
-    # Build the prompt for LLM (using template store from main app)
-    # This is a simplified version - actual implementation uses global TEMPLATE_STORE
-    # Would use template from TEMPLATE_STORE in actual implementation
-    prompt = f"Analyze the following text for incomplete sales elements:\n\n{text}"
-    logger.info("built prompt length=%d", len(prompt))
+    effective_call_type = req.call_type or config.CALL_TYPE
+
+    # Build prompt only for vLLM/template-based strategy
+    prompt = None
+    if effective_call_type != "agent":
+        prompt = f"Analyze the following text for incomplete sales elements:\n\n{text}"
+        logger.info("built prompt length=%d", len(prompt))
 
     # 2) Call detection strategy (vLLM or Agent)
-    logger.info("calling detection service type=%s", config.CALL_TYPE)
+    logger.info("calling detection service type=%s", effective_call_type)
     
     try:
         # This would be async in production, but kept sync for now
-        detector = get_detector(config.CALL_TYPE, config)
-        detection_result = asyncio.run(detector.detect(text, prompt))
+        detector = get_detector(effective_call_type, config)
+        if effective_call_type == "agent":
+            # Agent mode: do not use template prompt. Use user_query directly.
+            # Fallback to raw input text when explicit user_query is not provided.
+            detection_input = req.user_query if req.user_query else text
+            if not req.user_query:
+                logger.debug("[AGENT_USER_QUERY_FALLBACK] user_query not provided, using raw input text")
+            detection_result = asyncio.run(detector.detect(text, detection_input))
+        else:
+            detection_result = asyncio.run(detector.detect(text, prompt))
+        logger.debug(
+            "[DETECT_RESULT_DEBUG] type(summary)=%s, type(category)=%s, type(omission_num)=%s, "
+            "type(detected_issues)=%s, summary_preview=%s",
+            type(detection_result.get("summary")).__name__,
+            type(detection_result.get("category")).__name__,
+            type(detection_result.get("omission_num")).__name__,
+            type(detection_result.get("detected_issues")).__name__,
+            str(detection_result.get("summary"))[:200]
+        )
         logger.info("detection completed: issues=%d", len(detection_result.get("detected_issues", [])))
     except Exception as e:
         logger.exception("Detection failed: %s", e)
@@ -552,12 +571,29 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                         logger.debug("[BATCH_DETECTOR_READY] Detector ready")
                         sys.stdout.flush()
                         
-                        default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
+                        if config.CALL_TYPE == "agent":
+                            # Agent mode: use user_query directly, no prompt template.
+                            # Fallback to file content when explicit user_query is missing.
+                            detection_prompt = req.user_query if req.user_query else content
+                            if not req.user_query:
+                                logger.debug("[BATCH_AGENT_USER_QUERY_FALLBACK] user_query not provided, using file content")
+                        else:
+                            detection_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
                         logger.debug("[BATCH_FILE_DETECT] Calling detector for %s (call_type=%s)", 
                                     file_name, config.CALL_TYPE)
                         sys.stdout.flush()
                         
-                        ai_result = await detector.detect(content, default_prompt)
+                        ai_result = await detector.detect(content, detection_prompt)
+                        logger.debug(
+                            "[BATCH_DETECT_RESULT_DEBUG] file=%s, type(summary)=%s, type(category)=%s, "
+                            "type(omission_num)=%s, type(detected_issues)=%s, summary_preview=%s",
+                            file_name,
+                            type(ai_result.get("summary")).__name__,
+                            type(ai_result.get("category")).__name__,
+                            type(ai_result.get("omission_num")).__name__,
+                            type(ai_result.get("detected_issues")).__name__,
+                            str(ai_result.get("summary"))[:200]
+                        )
                         logger.debug("[BATCH_FILE_DETECT_OK] Detector returned: category=%s, issues=%d", 
                                     ai_result.get("category", "unknown"), 
                                     len(ai_result.get("detected_issues", [])))
@@ -670,7 +706,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                 db.create_result(result)
                 logger.debug("[BATCH_DB_INSERT_OK_%d] Saved result for %s (omission_num=%d, issues=%d)", 
                             idx, result_data.get("filename"), 
-                            int(result_data.get("omission_num", 0)), len(detected_issues))
+                            omission_num, len(detected_issues))
             except Exception as db_error:
                 logger.error("[BATCH_DB_ERROR] Failed to save result for %s: %s", 
                            result_data.get("filename"), str(db_error), exc_info=True)

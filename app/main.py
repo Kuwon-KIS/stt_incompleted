@@ -113,10 +113,9 @@ async def mock_agent_endpoint(agent_name: str, payload: Dict[str, Any]):
     logger.debug("Mock agent endpoint called: agent=%s", agent_name)
     
     try:
-        # Extract user query and context from payload
+        # Extract user query from payload (memo format)
         params = payload.get("parameters", {})
         user_query = params.get("user_query", "")
-        context = params.get("context", "")
         
         # Mock detection logic - simulates agent analysis
         # Agent response format (nested): { message_id, chat_thread_id, answer: { answer: { ... } } }

@@ -52,6 +52,9 @@ class ProcessRequest(BaseModel):
     
     # Template configuration
     template_name: str | None = None
+
+    # Agent user query (used directly when call_type='agent')
+    user_query: str | None = None
     
     def resolve_config(self, config):
         """Resolve all None values from config defaults."""
@@ -129,6 +132,9 @@ class BatchProcessRequest(BaseModel):
     analysis_files_per_date: Dict[str, int] | None = None  # {'YYYYMMDD': file_count, ...}
     analysis_new_dates: List[str] | None = None  # 처리 대상 날짜 목록
     analysis_timestamp: str | None = None  # 분석 시각 (ISO format)
+
+    # Agent user query (used directly when call_type='agent')
+    user_query: str | None = None
     
     def resolve_config(self, config):
         """Resolve all None values from config defaults."""
