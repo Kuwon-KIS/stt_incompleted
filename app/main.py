@@ -58,7 +58,6 @@ if static_dir.exists():
 # Initialize database
 try:
     db_manager = DatabaseManager()
-    logger.info("Database initialized successfully")
 except Exception as e:
     logger.error("Failed to initialize database: %s", e)
     raise
