@@ -1259,7 +1259,7 @@ class App {
             const toggle = document.getElementById('include-empty-toggle');
             if (toggle && !toggle.hasListener) {
                 toggle.addEventListener('change', () => {
-                    console.log('📊 토글 변경됨 - 분석 재조회:', toggle.checked);
+                    console.debug('토글 변경됨 - 분석 재조회:', toggle.checked);
                     // 토글 상태 변경 후 자동으로 분석 재조회
                     this.scheduleAutoAnalysis();
                 });
@@ -1725,7 +1725,7 @@ class App {
                 request.analysis_files_per_date = analysis.files_per_date || {};
                 request.analysis_new_dates = analysis.new_dates || [];
                 request.analysis_timestamp = new Date().toISOString();
-                console.log('📊 분석 메타 포함:', {
+                console.debug('분석 메타 포함:', {
                     files_per_date: request.analysis_files_per_date,
                     new_dates: request.analysis_new_dates
                 });

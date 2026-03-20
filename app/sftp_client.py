@@ -17,7 +17,7 @@ class MockSFTPClient:
     """
     def __init__(self, host: str, port: int = 22, username: Optional[str] = None, 
                  password: Optional[str] = None, pkey: Optional[str] = None, timeout: int = 10):
-        logger.info("Using MockSFTPClient (APP_ENV=local) - no real SFTP connection")
+        logger.debug("Using MockSFTPClient (APP_ENV=local) - no real SFTP connection")
         self.host = host
         self.port = port
         self.username = username
@@ -76,7 +76,7 @@ class MockSFTPClient:
         Returns:
             Sorted list of dates in YYYYMMDD format
         """
-        logger.info(f"MockSFTPClient.get_available_dates: returning {len(self.mock_dates)} mock dates")
+        logger.debug(f"MockSFTPClient.get_available_dates: returning {len(self.mock_dates)} mock dates")
         return sorted(self.mock_dates)
     
     def read_file(self, path: str) -> str:
@@ -115,19 +115,19 @@ class SFTPClient:
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.sftp = None
         try:
-            logger.info("Connecting to SFTP host=%s port=%s user=%s", host, port, username)
+            logger.debug("Connecting to SFTP host=%s port=%s user=%s", host, port, username)
             if pkey:
                 # Try to load as file path first
                 try:
                     key = paramiko.RSAKey.from_private_key_file(pkey)
-                    logger.info("Loaded SSH key from file: %s", pkey)
+                    logger.debug("Loaded SSH key from file: %s", pkey)
                 except (FileNotFoundError, IOError):
                     # If file doesn't exist, treat as base64-encoded key content
                     try:
                         key_bytes = base64.b64decode(pkey)
                         key_file = io.StringIO(key_bytes.decode('utf-8'))
                         key = paramiko.RSAKey.from_private_key(key_file)
-                        logger.info("Loaded SSH key from base64-encoded content")
+                        logger.debug("Loaded SSH key from base64-encoded content")
                     except Exception as e:
                         logger.error("Failed to parse SSH key as file or base64: %s", e)
                         raise ValueError(f"Invalid SSH key format: {e}")
@@ -136,7 +136,7 @@ class SFTPClient:
             else:
                 self.client.connect(hostname=host, port=port, username=username, password=password, timeout=timeout)
             self.sftp = self.client.open_sftp()
-            logger.info("SFTP connection established to %s", host)
+            logger.debug("SFTP connection established to %s", host)
         except Exception:
             logger.exception("Failed to connect to SFTP %s", host)
             # cleanup on failure
@@ -253,7 +253,7 @@ class SFTPClient:
         if not self.sftp:
             raise RuntimeError("SFTP connection not established")
         
-        logger.info(f"Scanning SFTP {root_path} for available dates")
+        logger.debug(f"Scanning SFTP {root_path} for available dates")
         try:
             entries = self.list_directories(root_path)
             dates = []
@@ -263,7 +263,7 @@ class SFTPClient:
                     dates.append(entry)
             
             dates = sorted(dates)
-            logger.info(f"Found {len(dates)} available dates in SFTP: {dates}")
+            logger.debug(f"Found {len(dates)} available dates in SFTP")
             return dates
         
         except Exception as e:

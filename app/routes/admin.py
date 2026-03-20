@@ -365,7 +365,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
         HTTPException: If analysis fails
     """
     try:
-        logger.info(f" [BATCH_ANALYSIS] START [{req.start_date}, {req.end_date}]")
+        logger.info(f"[BATCH_ANALYSIS] START [{req.start_date}, {req.end_date}]")
         
         # Step 1: Get available dates from SFTP/Mock (or use provided ones to avoid redundant call)
         available_dates = []
@@ -373,9 +373,9 @@ async def analyze_batch(req: BatchAnalysisRequest):
         # Use pre-fetched available_dates if provided
         if req.available_dates:
             available_dates = req.available_dates
-            logger.info(f"📊 [BATCH_ANALYSIS] Using provided available_dates: {len(available_dates)} dates")
+            logger.debug(f"[BATCH_ANALYSIS] Using provided available_dates: {len(available_dates)} dates")
         else:
-            logger.info(f"📊 [BATCH_ANALYSIS] Fetching available_dates from SFTP/Mock...")
+            logger.debug(f"[BATCH_ANALYSIS] Fetching available_dates from SFTP/Mock...")
             try:
                 if config.APP_ENV == "local":
                     from app.sftp_client import MockSFTPClient
@@ -423,7 +423,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
         
         # Step 2: Get completed dates from database
         completed_dates = db.get_completed_date_range(req.start_date, req.end_date)
-        logger.info(f"Completed dates in range: {completed_dates}")
+        logger.debug(f"Completed dates in range: {completed_dates}")
         
         # Step 3: Analyze and classify case
         analysis = analyze_batch_case(
@@ -453,19 +453,19 @@ async def analyze_batch(req: BatchAnalysisRequest):
                     for date_str in analysis.new_dates:
                         try:
                             date_path = f"{root_path}/{date_str}"
-                            logger.info(f"[BATCH_ANALYSIS] Counting files for date {date_str}, path: {date_path}")
+                            logger.debug(f"[BATCH_ANALYSIS] Counting files for date {date_str}, path: {date_path}")
                             files = client.list_files(path=date_path, suffix=".txt")
                             file_count = len(files) if files else 0
                             files_per_date[date_str] = file_count
                             total_files_to_process += file_count
-                            logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
+                            logger.debug(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
                         except Exception as e:
                             logger.error(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {e}", exc_info=True)
                             files_per_date[date_str] = 0
                 else:
                     # Real SFTP path: parallelize per-date counting with separate connections per worker.
                     max_workers = min(max(1, config.BATCH_CONCURRENCY), len(analysis.new_dates))
-                    logger.info(f"[BATCH_ANALYSIS] Parallel counting start: dates={len(analysis.new_dates)}, workers={max_workers}")
+                    logger.debug(f"[BATCH_ANALYSIS] Parallel counting start: dates={len(analysis.new_dates)}, workers={max_workers}")
 
                     def _count_files_for_date(date_str: str):
                         date_path = f"{root_path}/{date_str}"
@@ -496,7 +496,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
                             if error:
                                 logger.error(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {error}")
                             else:
-                                logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
+                                logger.debug(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
         finally:
             # No-op for local client and per-thread clients are closed in worker finally.
             pass
@@ -508,7 +508,7 @@ async def analyze_batch(req: BatchAnalysisRequest):
             empty_dates = [date for date in analysis.new_dates if files_per_date.get(date, 0) == 0]
             
             if empty_dates:
-                logger.info(f"[BATCH_ANALYSIS] Filtering out {len(empty_dates)} empty dates: {empty_dates}")
+                logger.debug(f"[BATCH_ANALYSIS] Filtering out {len(empty_dates)} empty dates: {empty_dates}")
             
             # Update analysis.new_dates to only include non-empty dates
             analysis.new_dates = non_empty_dates

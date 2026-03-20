@@ -229,7 +229,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
     
     try:
         # Step 1: Handle option_id for SELECT_TARGET feature
-        logger.info("[BATCH_STEP_1_START] Checking option_id")
+        logger.debug("[BATCH_STEP_1_START] Checking option_id")
         sys.stdout.flush()
         if req.option_id == "view_history":
             logger.info("[BATCH_OPTION] option_id='view_history': returning without processing")
@@ -237,37 +237,37 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
             logger.info("[BATCH_SUCCESS] Job completed (view_history mode)")
             logger.info("=" * 80)
             return
-        logger.info("[BATCH_STEP_1_OK] option_id check completed: %s", req.option_id)
+        logger.debug("[BATCH_STEP_1_OK] option_id check completed: %s", req.option_id)
         sys.stdout.flush()
         
         # Step 2: Adjust force_reprocess based on option_id
-        logger.info("[BATCH_STEP_2_START] Adjusting force_reprocess")
+        logger.debug("[BATCH_STEP_2_START] Adjusting force_reprocess")
         sys.stdout.flush()
         if req.option_id == "reprocess" or req.option_id == "reprocess_all":
             req.force_reprocess = True
             logger.info("[BATCH_OPTION] option_id='%s': setting force_reprocess=true", req.option_id)
-        logger.info("[BATCH_STEP_2_OK] force_reprocess adjusted")
+        logger.debug("[BATCH_STEP_2_OK] force_reprocess adjusted")
         sys.stdout.flush()
         
         # Step 3: Check for pre-fetched analysis metadata (optimization to avoid redundant SFTP calls)
-        logger.info("[BATCH_STEP_3_START] Checking for pre-fetched analysis metadata")
+        logger.debug("[BATCH_STEP_3_START] Checking for pre-fetched analysis metadata")
         analysis_metadata_available = False
         if req.analysis_files_per_date and req.analysis_new_dates:
             analysis_metadata_available = True
-            logger.info("[BATCH_STEP_3_META] Analysis metadata found: %d dates with file counts", 
+            logger.debug("[BATCH_STEP_3_META] Analysis metadata found: %d dates with file counts", 
                        len(req.analysis_new_dates))
-            logger.info("[BATCH_STEP_3_FILES] New dates: %s", req.analysis_new_dates)
-            logger.info("[BATCH_STEP_3_COUNTS] Files per date: %s", req.analysis_files_per_date)
+            logger.debug("[BATCH_STEP_3_FILES] New dates: %s", req.analysis_new_dates)
+            logger.debug("[BATCH_STEP_3_COUNTS] Files per date: %s", req.analysis_files_per_date)
         else:
-            logger.info("[BATCH_STEP_3_NO_META] No analysis metadata provided, will fetch from SFTP")
-        logger.info("[BATCH_STEP_3_OK] Metadata check completed (available=%s)", analysis_metadata_available)
+            logger.debug("[BATCH_STEP_3_NO_META] No analysis metadata provided, will fetch from SFTP")
+        logger.debug("[BATCH_STEP_3_OK] Metadata check completed (available=%s)", analysis_metadata_available)
         sys.stdout.flush()
         
         logger.info("[BATCH_STATUS_UPDATE] Updating status to 'running'")
         sys.stdout.flush()
         try:
             db.update_job_status(job_id, "running")
-            logger.info("[BATCH_STATUS_OK] Status updated successfully")
+            logger.debug("[BATCH_STATUS_OK] Status updated successfully")
             sys.stdout.flush()
         except Exception as db_err:
             logger.exception("[BATCH_STATUS_ERROR] Failed to update job status: %s", db_err)
@@ -396,8 +396,8 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
             
             try:
                 # 1. SFTP 클라이언트 초기화 (파일 목록 조회용only, 각 파일 읽기는 별도 연결 사용)
-                logger.info("[BATCH_SFTP_INIT] Initializing SFTP client for file listing: %s:%d", 
-                           config.SFTP_HOST, config.SFTP_PORT)
+                logger.debug("[BATCH_SFTP_INIT] Initializing SFTP client for file listing: %s:%d", 
+                            config.SFTP_HOST, config.SFTP_PORT)
                 sftp_client = SFTPClient(
                     host=config.SFTP_HOST,
                     port=config.SFTP_PORT,
@@ -405,13 +405,13 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     password=config.SFTP_PASSWORD,
                     pkey=config.SFTP_KEY
                 )
-                logger.info("[BATCH_SFTP_CONNECTED] SFTP client connected for listing")
+                logger.debug("[BATCH_SFTP_CONNECTED] SFTP client connected for listing")
                 
                 files_to_process = []
 
                 if analysis_metadata_available:
                     target_dates = req.analysis_new_dates
-                    logger.info("[BATCH_SFTP_TARGET_DATES] Using analysis metadata dates: %s", target_dates)
+                    logger.debug("[BATCH_SFTP_TARGET_DATES] Using analysis metadata dates: %s", target_dates)
                 else:
                     target_dates = []
                     current = datetime.strptime(req.start_date, "%Y%m%d")
@@ -426,12 +426,12 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     date_path = f"{root_path}/{date_str}"
                     date_files[date_str] = {"total": 0, "success": 0, "failed": 0}
                     
-                    logger.info("[BATCH_SFTP_LIST] Listing files in: %s", date_path)
+                    logger.debug("[BATCH_SFTP_LIST] Listing files in: %s", date_path)
                     
                     try:
                         # 해당 날짜 디렉토리에서 .txt 파일 조회 (파일명만 반환)
                         file_names = sftp_client.list_files(path=date_path, suffix=".txt")
-                        logger.info("[BATCH_FILES_FOUND] Found %d files for date %s", len(file_names), date_str)
+                        logger.debug("[BATCH_FILES_FOUND] Found %d files for date %s", len(file_names), date_str)
                         
                         # Collect files for async processing
                         for file_name in file_names:
@@ -446,10 +446,10 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                                      date_path, str(dir_error))
                 
                 # File listing complete, close the initial SFTP connection (individual threads will create their own)
-                logger.info("[BATCH_SFTP_FILES_COLLECTED] Collected %d files to process", len(files_to_process))
+                logger.debug("[BATCH_SFTP_FILES_COLLECTED] Collected %d files to process", len(files_to_process))
                 try:
                     sftp_client.close()
-                    logger.info("[BATCH_SFTP_LISTING_CLOSED] SFTP connection for listing closed")
+                    logger.debug("[BATCH_SFTP_LISTING_CLOSED] SFTP connection for listing closed")
                 except Exception as close_err:
                     logger.warning("[BATCH_SFTP_LISTING_CLOSE_ERROR] Error closing listing connection: %s", close_err)
                 
@@ -458,7 +458,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                 # BATCH_CONCURRENCY read from: .env.local (2), .env.prod (8), or default (4)
                 max_workers = config.BATCH_CONCURRENCY
                 sftp_read_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sftp-read-")
-                logger.info("[BATCH_SFTP_EXECUTOR] Created ThreadPoolExecutor with max_workers=%d (from BATCH_CONCURRENCY config)", max_workers)
+                logger.debug("[BATCH_SFTP_EXECUTOR] Created ThreadPoolExecutor with max_workers=%d (from BATCH_CONCURRENCY config)", max_workers)
                 
                 def read_file_with_new_connection(file_path: str) -> str:
                     """
@@ -467,8 +467,8 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     """
                     thread_id = threading.current_thread().ident
                     thread_name = threading.current_thread().name
-                    logger.info("[SFTP_READ_THREAD_%s] Starting file read: %s (thread=%s)", 
-                               thread_id, file_path, thread_name)
+                    logger.debug("[SFTP_READ_THREAD_%s] Starting file read: %s (thread=%s)", 
+                                thread_id, file_path, thread_name)
                     
                     read_start = time.time()
                     try:
@@ -488,8 +488,8 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                         thread_sftp.close()
                         
                         elapsed = time.time() - read_start
-                        logger.info("[SFTP_READ_OK_%s] File read success: %d bytes in %.2fs", 
-                                   thread_id, len(content), elapsed)
+                        logger.debug("[SFTP_READ_OK_%s] File read success: %d bytes in %.2fs", 
+                                    thread_id, len(content), elapsed)
                         return content
                         
                     except Exception as e:
@@ -507,12 +507,12 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                         file_name = file_info["filename"]
                         file_path = f"{date_path}/{file_name}"
                         
-                        logger.info("[BATCH_FILE_START] Starting file processing: %s", file_name)
+                        logger.debug("[BATCH_FILE_START] Starting file processing: %s", file_name)
                         sys.stdout.flush()
                         
                         # 파일 내용 읽기 (dedicated thread pool by file)
-                        logger.info("[BATCH_FILE_READ_START] About to read file from SFTP: %s (queue may have %d pending)", 
-                                   file_path, len(files_to_process))
+                        logger.debug("[BATCH_FILE_READ_START] About to read file from SFTP: %s (queue may have %d pending)", 
+                                    file_path, len(files_to_process))
                         sys.stdout.flush()
                         
                         read_start = time.time()
@@ -527,8 +527,8 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                             )
                             
                             elapsed = time.time() - read_start
-                            logger.info("[BATCH_FILE_READ_OK] File read successfully: %d bytes in %.2fs", 
-                                       len(content), elapsed)
+                            logger.debug("[BATCH_FILE_READ_OK] File read successfully: %d bytes in %.2fs", 
+                                        len(content), elapsed)
                             sys.stdout.flush()
                             
                         except asyncio.TimeoutError:
@@ -545,22 +545,22 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                             raise
                         
                         # AI 처리 (async detector.detect 호출)
-                        logger.info("[BATCH_DETECTOR_INIT] Initializing detector: %s", config.CALL_TYPE)
+                        logger.debug("[BATCH_DETECTOR_INIT] Initializing detector: %s", config.CALL_TYPE)
                         sys.stdout.flush()
                         
                         detector = get_detector(config.CALL_TYPE, config)
-                        logger.info("[BATCH_DETECTOR_READY] Detector ready")
+                        logger.debug("[BATCH_DETECTOR_READY] Detector ready")
                         sys.stdout.flush()
                         
                         default_prompt = "판매 대화의 불완전판매요소를 검사해주세요."
-                        logger.info("[BATCH_FILE_DETECT] Calling detector for %s (call_type=%s)", 
-                                   file_name, config.CALL_TYPE)
+                        logger.debug("[BATCH_FILE_DETECT] Calling detector for %s (call_type=%s)", 
+                                    file_name, config.CALL_TYPE)
                         sys.stdout.flush()
                         
                         ai_result = await detector.detect(content, default_prompt)
-                        logger.info("[BATCH_FILE_DETECT_OK] Detector returned: category=%s, issues=%d", 
-                                   ai_result.get("category", "unknown"), 
-                                   len(ai_result.get("detected_issues", [])))
+                        logger.debug("[BATCH_FILE_DETECT_OK] Detector returned: category=%s, issues=%d", 
+                                    ai_result.get("category", "unknown"), 
+                                    len(ai_result.get("detected_issues", [])))
                         sys.stdout.flush()
                         
                         # 결과 변환
@@ -600,7 +600,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                             date_str = result_item["date"]
                             date_files[date_str]["total"] += 1
                             date_files[date_str]["success"] += 1
-                            logger.info("[BATCH_RESULT_OK] File processed successfully: %s", result_item.get("filename"))
+                            logger.debug("[BATCH_RESULT_OK] File processed successfully: %s", result_item.get("filename"))
                         else:
                             logger.warning("[BATCH_RESULT_ERROR] File processing failed: %s", error)
                             # Track failed file if we have date info
@@ -620,9 +620,9 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
             finally:
                 # Clean up resources
                 if 'sftp_read_executor' in locals():
-                    logger.info("[BATCH_EXECUTOR_SHUTDOWN] Shutting down thread pool executor")
+                    logger.debug("[BATCH_EXECUTOR_SHUTDOWN] Shutting down thread pool executor")
                     sftp_read_executor.shutdown(wait=True)
-                    logger.info("[BATCH_EXECUTOR_OK] Thread pool executor shut down")
+                    logger.debug("[BATCH_EXECUTOR_OK] Thread pool executor shut down")
         
         # ===== 공통 DB 저장 로직 (Local/Real 모드 모두) =====
         logger.info("[BATCH_DB_INSERT_START] Saving %d results to database", len(results))
@@ -661,9 +661,9 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     created_at=result_data.get("created_at", datetime.now(timezone.utc))
                 )
                 db.create_result(result)
-                logger.info("[BATCH_DB_INSERT_OK_%d] Saved result for %s (omission_num=%d, issues=%d)", 
-                           idx, result_data.get("filename"), 
-                           int(result_data.get("omission_num", 0)), len(detected_issues))
+                logger.debug("[BATCH_DB_INSERT_OK_%d] Saved result for %s (omission_num=%d, issues=%d)", 
+                            idx, result_data.get("filename"), 
+                            int(result_data.get("omission_num", 0)), len(detected_issues))
             except Exception as db_error:
                 logger.error("[BATCH_DB_ERROR] Failed to save result for %s: %s", 
                            result_data.get("filename"), str(db_error), exc_info=True)

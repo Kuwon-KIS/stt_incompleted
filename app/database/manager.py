@@ -29,7 +29,7 @@ class DatabaseManager:
         """Ensure database directory exists."""
         db_dir = Path(self.db_path).parent
         db_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Database directory ready: {db_dir}")
+        logger.debug(f"Database directory ready: {db_dir}")
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get SQLite connection with thread-safe settings."""
@@ -160,7 +160,7 @@ class DatabaseManager:
                 job.total_files, job.success_files, job.failed_files
             ))
             conn.commit()
-            logger.info(f"Job created: {job.id}")
+            logger.debug(f"Job created: {job.id}")
         except Exception as e:
             logger.error(f"Failed to create job: {e}")
             raise
@@ -364,7 +364,7 @@ class DatabaseManager:
 
             cursor.execute(f"UPDATE batch_jobs SET {set_clause} WHERE id = ?", values)
             conn.commit()
-            logger.info(f"Job {job_id} status updated to {status}")
+            logger.debug(f"Job {job_id} status updated to {status}")
         except Exception as e:
             logger.error(f"Failed to update job status: {e}")
             raise
@@ -417,7 +417,7 @@ class DatabaseManager:
             ))
             conn.commit()
             result_id = cursor.lastrowid
-            logger.info(f"Result created: {result_id} for job {result.job_id}")
+            logger.debug(f"Result created: {result_id} for job {result.job_id}")
             return result_id
         except Exception as e:
             logger.error(f"Failed to create result: {e}", exc_info=True)

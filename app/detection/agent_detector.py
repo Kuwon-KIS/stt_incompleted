@@ -45,50 +45,21 @@ class AgentDetector(DetectionStrategy):
             raise ValueError("AGENT_URL is required for Agent detector")
         return True
     
-    async def extract_issues(self, response: str) -> List[Dict[str, Any]]:
+    async def extract_issues(self, agent_result: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Extract detected issues from Agent response in structured format.
-        
-        Agent response can have two formats:
-        1. Simple format (direct output):
-           { category, summary, omission_num, omission_steps, omission_reasons }
-        
-        2. Nested format (actual Agent API):
-           { message_id, chat_thread_id, answer: { answer: { category, summary, ... } } }
-           또는 answer.answer가 JSON 문자열일 수도 있음
+        Extract detected issues from normalized Agent result in structured format.
         
         Args:
-            response: JSON string from Agent API
+            agent_result: Normalized Agent result dict with omission fields
             
         Returns:
             List of issue dictionaries with structured format
         """
         try:
-            # Parse Agent response as JSON
-            agent_response = json.loads(response)
-            
-            # Try to extract the actual data from nested structure first
-            agent_result = agent_response
-            
-            # Check if response has nested answer structure
-            if "answer" in agent_response and isinstance(agent_response["answer"], dict):
-                if "answer" in agent_response["answer"]:
-                    agent_result = agent_response["answer"]["answer"]
-                    logger.debug("Extracted nested Agent response format")
-            
-            # Handle case where agent_result might be a JSON string (double-nested)
-            if isinstance(agent_result, str):
-                try:
-                    agent_result = json.loads(agent_result)
-                    logger.debug("Parsed double-nested JSON string in agent_result")
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning("agent_result is a string but not valid JSON: %s", agent_result[:100])
-                    return [{"error": "invalid_format", "details": "agent_result is a string but not JSON"}]
-            
             # Extract omission information
             omission_steps = agent_result.get("omission_steps", [])
             omission_reasons = agent_result.get("omission_reasons", [])
-            omission_num = int(agent_result.get("omission_num", "0"))
+            omission_num = int(agent_result.get("omission_num", 0))
             
             # Validate that steps and reasons are paired
             if len(omission_steps) != len(omission_reasons):
@@ -104,16 +75,49 @@ class AgentDetector(DetectionStrategy):
                     "reason": reason,
                     "category": agent_result.get("category", "unknown")
                 })
+
+            if omission_num != len(issues):
+                logger.debug("omission_num (%d) differs from extracted issues (%d)", omission_num, len(issues))
             
             logger.debug("Extracted %d issues from Agent response", len(issues))
             return issues
-            
-        except json.JSONDecodeError as e:
-            logger.warning("Failed to parse Agent response as JSON: %s. Returning error.", e)
-            return [{"error": "parse_error", "details": str(e), "raw_response": response[:200]}]
         except Exception as e:
             logger.exception("Error extracting issues from Agent response: %s", e)
             return [{"error": "extraction_error", "details": str(e)}]
+
+    def _normalize_agent_result(self, result_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize response payload to a single agent result dict.
+
+        Supports mock format ({"result": "...json..."}) and on-prem nested answer format.
+        """
+        if "result" in result_data:
+            completion = result_data.get("result", "")
+            if not completion:
+                return {}
+            try:
+                return json.loads(completion)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("Mock result is not valid JSON")
+                return {}
+
+        agent_data: Any = result_data
+        if "answer" in agent_data and isinstance(agent_data["answer"], dict):
+            if "answer" in agent_data["answer"]:
+                agent_data = agent_data["answer"]["answer"]
+
+        if isinstance(agent_data, str):
+            try:
+                agent_data = json.loads(agent_data)
+                logger.debug("Parsed nested answer as JSON string")
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("Nested answer is a string but not valid JSON")
+                return {}
+
+        if not isinstance(agent_data, dict):
+            logger.warning("Agent response normalized to non-dict type")
+            return {}
+
+        return agent_data
     
     async def detect(self, text: str, prompt: str) -> Dict[str, Any]:
         """
@@ -128,8 +132,8 @@ class AgentDetector(DetectionStrategy):
         """
         self.validate_config()
         
-        logger.info("Agent detection starting: agent=%s, use_streaming=%s",
-                   self.agent_name, self.use_streaming)
+        logger.debug("Agent detection starting: agent=%s, use_streaming=%s",
+                self.agent_name, self.use_streaming)
         
         start_time = time.time()
         
@@ -180,44 +184,18 @@ class AgentDetector(DetectionStrategy):
             result_data = response.json()
             logger.debug("Agent response received: status=%d", response.status_code)
             
-            # Handle two response formats:
-            # 1. Mock format: {"result": "{...json string...}"}
-            # 2. On-prem format: {"message_id": "...", "chat_thread_id": "...", "answer": {...}}
-            
-            if "result" in result_data:
-                # Mock/agent format: result is a JSON string
-                completion = result_data.get("result", "")
-                try:
-                    agent_data = json.loads(completion) if completion else {}
-                except (json.JSONDecodeError, TypeError):
-                    agent_data = {}
-            else:
-                # On-prem format: direct response structure
-                agent_data = result_data
-                completion = json.dumps(result_data)
+            completion = result_data.get("result", "") if "result" in result_data else json.dumps(result_data)
+            agent_data = self._normalize_agent_result(result_data)
             
             logger.debug("Agent response format: %s", "mock" if "result" in result_data else "on-prem")
             
             # Extract detected issues
-            detected_issues = await self.extract_issues(completion)
-            
-            # Navigate nested structure if exists (for mock format)
-            if "answer" in agent_data and isinstance(agent_data["answer"], dict):
-                if "answer" in agent_data["answer"]:
-                    agent_data = agent_data["answer"]["answer"]
-                    # Handle case where nested answer is a JSON string
-                    if isinstance(agent_data, str):
-                        try:
-                            agent_data = json.loads(agent_data)
-                            logger.debug("Parsed nested answer as JSON string")
-                        except (json.JSONDecodeError, TypeError):
-                            logger.warning("Nested answer is a string but not valid JSON: %s", agent_data[:100])
-                            agent_data = {}
+            detected_issues = await self.extract_issues(agent_data)
             
             processing_time = (time.time() - start_time) * 1000
             
-            logger.info("Agent detection completed: agent=%s, issues=%d, time=%.2fms",
-                       self.agent_name, len(detected_issues), processing_time)
+            logger.debug("Agent detection completed: agent=%s, issues=%d, time=%.2fms",
+                        self.agent_name, len(detected_issues), processing_time)
             
             return {
                 "detected_issues": detected_issues,
