@@ -277,7 +277,7 @@ echo ""
 
 echo -e "${BLUE}📦 Generated Files${NC}"
 echo "─────────────────────────────────────"
-ls -lh "${OUTPUT_DIR}" | grep -E "tar\.gz|build-info" | head -5 | awk '{print "  " $9 " (" $5 ")"}'
+ls -lh -t "${OUTPUT_DIR}" | grep -E "tar\.gz|build-info" | head -5 | awk '{print "  " $9 " (" $5 ")"}'
 echo ""
 
 # Step 6: Optional - Load image to Docker
