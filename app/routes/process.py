@@ -1006,6 +1006,18 @@ async def download_batch_results(job_id: str):
         writer.writeheader()
         
         for result in results:
+            raw_issues = result.detected_issues if result.detected_issues else []
+            export_issues = []
+            if isinstance(raw_issues, list):
+                for issue in raw_issues:
+                    if not isinstance(issue, dict):
+                        continue
+                    export_issues.append({
+                        "index": issue.get("index"),
+                        "omission_step": issue.get("step") if issue.get("step") is not None else issue.get("omission_step", ""),
+                        "omission_reason": issue.get("reason") if issue.get("reason") is not None else issue.get("omission_reason", "")
+                    })
+
             writer.writerow({
                 'date': result.file_date,
                 'filename': result.filename,
@@ -1013,7 +1025,7 @@ async def download_batch_results(job_id: str):
                 'category': result.category or '-',
                 'omission_num': result.omission_num or '-',
                 'summary': result.summary or '-',
-                'detected_issues': str(result.detected_issues) if result.detected_issues else '-',
+                'detected_issues': str(export_issues) if export_issues else '-',
                 'error_message': result.error_message or '-'
             })
         
