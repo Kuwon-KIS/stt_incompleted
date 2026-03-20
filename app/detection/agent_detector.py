@@ -98,30 +98,30 @@ class AgentDetector(DetectionStrategy):
                         "category": agent_result.get("category") or "unknown"
                     })
 
-            # 2) Fallback to omission_steps + omission_detected_reasons when detected_issues is missing/empty.
+            # 2) Fallback to omission_steps + omission_reasons when detected_issues is missing/empty.
             omission_steps = _to_list(agent_result.get("omission_steps", []))
-            omission_detected_reasons = _to_list(agent_result.get("omission_detected_reasons", []))
+            omission_reasons = _to_list(agent_result.get("omission_reasons", []))
             omission_num_raw = agent_result.get("omission_num", 0)
             try:
                 omission_num = int(omission_num_raw) if omission_num_raw is not None else 0
             except (TypeError, ValueError):
                 omission_num = 0
             logger.debug("[extract_issues] omission_num=%s, steps=%d, reasons=%d, detected_issues=%s", 
-                        omission_num_raw, len(omission_steps), len(omission_detected_reasons), 
+                        omission_num_raw, len(omission_steps), len(omission_reasons), 
                         type(raw_detected_issues).__name__)
 
             if not issues:
-                if len(omission_steps) != len(omission_detected_reasons):
+                if len(omission_steps) != len(omission_reasons):
                     logger.warning(
-                        "Mismatch between omission_steps (%d) and omission_detected_reasons (%d)",
+                        "Mismatch between omission_steps (%d) and omission_reasons (%d)",
                         len(omission_steps),
-                        len(omission_detected_reasons)
+                        len(omission_reasons)
                     )
 
-                pair_count = max(len(omission_steps), len(omission_detected_reasons))
+                pair_count = max(len(omission_steps), len(omission_reasons))
                 for i in range(pair_count):
                     step = omission_steps[i] if i < len(omission_steps) else ""
-                    reason = omission_detected_reasons[i] if i < len(omission_detected_reasons) else ""
+                    reason = omission_reasons[i] if i < len(omission_reasons) else ""
                     if not str(step).strip() and not str(reason).strip():
                         continue
                     issues.append({
@@ -179,7 +179,7 @@ class AgentDetector(DetectionStrategy):
                 return {}
 
             # Stop when payload already looks like the final analysis object.
-            if any(k in agent_data for k in ("omission_num", "omission_steps", "omission_detected_reasons", "detected_issues", "summary", "category")):
+            if any(k in agent_data for k in ("omission_num", "omission_steps", "omission_reasons", "detected_issues", "summary", "category")):
                 break
 
             if "answer" in agent_data:
@@ -264,6 +264,7 @@ class AgentDetector(DetectionStrategy):
             
             result_data = response.json()
             logger.debug("Agent response received: status=%d", response.status_code)
+            logger.debug(f"Agent responsae raw data: {result_data}")
             
             completion = result_data.get("result", "") if "result" in result_data else json.dumps(result_data)
             agent_data = self._normalize_agent_result(result_data)
