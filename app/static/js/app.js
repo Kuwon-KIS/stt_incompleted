@@ -701,6 +701,7 @@ class App {
                                 
                                 if (fullJob.results && Array.isArray(fullJob.results) && fullJob.results.length > 0) {
                                     fileResults.innerHTML = this.renderFileResults(fullJob);
+                                    this.setupDateGroupToggles(fileResults);
                                 } else {
                                     fileResults.innerHTML = '<p class="empty-state">처리 결과가 없습니다</p>';
                                 }
@@ -718,7 +719,7 @@ class App {
                     // 텍스트 업데이트
                     const textNode = btn.childNodes[btn.childNodes.length - 1];
                     if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-                        textNode.textContent = isCurrentlyHidden ? ' 파일 목록 숨기기' : ' 파일 목록 보기';
+                        textNode.textContent = isCurrentlyHidden ? ' 처리 파일 목록 및 상세 결과 숨기기' : ' 처리 파일 목록 및 상세 결과 보기';
                     }
                 }
             });
@@ -790,9 +791,21 @@ class App {
         const successCount = job.success_files || (job.results ? job.results.filter(r => r.success).length : 0);
         const errorCount = job.failed_files || (job.results ? job.results.filter(r => !r.success).length : 0);
         const totalFiles = job.total_files || (job.results ? job.results.length : 0);
-        const totalOmissions = job.results ? job.results.reduce((sum, r) => {
-            return sum + (r.detected_issues ? r.detected_issues.length : 0);
-        }, 0) : 0;
+        
+        // Use API-provided total_omissions if available, otherwise calculate from results
+        let totalOmissions;
+        if (job.total_omissions !== undefined) {
+            totalOmissions = job.total_omissions;
+        } else if (job.results) {
+            totalOmissions = job.results.reduce((sum, r) => {
+                // Check omission_num first (numeric value from DB)
+                if (r.omission_num) return sum + r.omission_num;
+                // Fallback to detected_issues length
+                return sum + (r.detected_issues ? r.detected_issues.length : 0);
+            }, 0);
+        } else {
+            totalOmissions = 0;
+        }
 
         const createdDate = job.created_at ? new Date(job.created_at).toLocaleString('ko-KR') : '-';
         const statusText = job.status || 'unknown';
@@ -800,32 +813,24 @@ class App {
         return `
             <div class="job-item" data-job-id="${job.job_id || job.id}">
                 <div class="job-header">
-                    <div class="job-header-info">
+                    <div class="job-info-row">
                         <div class="job-id">작업 ID: ${(job.job_id || job.id || '').substring(0, 8)}...</div>
-                        <div class="job-meta">생성: ${createdDate} | 범위: ${job.date_range || `${job.start_date} ~ ${job.end_date}` || '-'} | 상태: <span class="badge">${this.getStatusText(statusText)}</span></div>
+                        <span class="badge">${this.getStatusText(statusText)}</span>
+                        <span class="job-detail-text"><strong>범위:</strong> ${job.date_range || `${job.start_date} ~ ${job.end_date}` || '-'}</span>
+                        <span class="job-detail-text"><strong>생성일시:</strong> ${createdDate}</span>
                     </div>
-                    <div class="job-stats">
-                        <div class="job-stat">
-                            <span class="job-stat-label">처리 파일:</span>
-                            <span class="job-stat-value">${totalFiles}</span>
+                    <div class="job-actions-row">
+                        <div class="job-stats">
+                            <span class="stat-badge">처리 파일: ${totalFiles}</span>
+                            <span class="stat-badge success">성공: ${successCount}</span>
+                            <span class="stat-badge error">실패: ${errorCount}</span>
+                            <span class="stat-badge omission" ${totalOmissions > 0 ? 'style="background: #fffbeb; border: 1px solid #f59e0b; color: #b45309;"' : ''}>총 누락: ${totalOmissions}</span>
                         </div>
-                        <div class="job-stat success">
-                            <span class="job-stat-label">성공:</span>
-                            <span class="job-stat-value">${successCount}</span>
-                        </div>
-                        <div class="job-stat error">
-                            <span class="job-stat-label">실패:</span>
-                            <span class="job-stat-value">${errorCount}</span>
-                        </div>
-                        <div class="job-stat">
-                            <span class="job-stat-label">총 누락:</span>
-                            <span class="job-stat-value">${totalOmissions}</span>
-                        </div>
-                        <div style="display: flex; gap: 12px; align-items: center; margin-left: auto;">
+                        <div class="job-buttons">
                             <button class="job-download-btn" data-job-id="${job.job_id || job.id}" style="padding: 8px 14px; font-size: 0.9em; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.2s;">
-                                다운로드
+                                결과 다운로드
                             </button>
-                            <button class="job-toggle"> 파일 목록 보기</button>
+                            <button class="job-toggle"> 처리 파일 목록 및 상세 결과 보기</button>
                         </div>
                     </div>
                 </div>
@@ -840,41 +845,105 @@ class App {
             return '<p class="empty-state">처리 결과가 없습니다</p>';
         }
 
-        return job.results.map((result, index) => {
-            // detected_issues 처리 (배열 또는 JSON 문자열 모두 지원)
-            let detectedCount = 0;
-            if (result.detected_issues) {
-                if (typeof result.detected_issues === 'string') {
-                    try {
-                        const parsed = JSON.parse(result.detected_issues);
-                        detectedCount = Array.isArray(parsed) ? parsed.length : 0;
-                    } catch {
-                        detectedCount = 0;
-                    }
-                } else if (Array.isArray(result.detected_issues)) {
-                    detectedCount = result.detected_issues.length;
-                }
+        // 날짜별로 파일 그룹화
+        const groupedByDate = {};
+        job.results.forEach((result, index) => {
+            const date = result.date || result.file_date || '날짜 미정';
+            if (!groupedByDate[date]) {
+                groupedByDate[date] = [];
             }
+            groupedByDate[date].push({ result, index });
+        });
+
+        // 날짜순 정렬 (내림차순 - 최근 날짜가 위)
+        const sortedDates = Object.keys(groupedByDate).sort().reverse();
+
+        return sortedDates.map(date => {
+            const filesInDate = groupedByDate[date];
             
-            const statusText = result.success ? '성공' : '실패';
-            const statusDetail = detectedCount > 0 ? `누락: ${detectedCount}건` : (result.success ? '완료' : (result.error_message || '처리 실패'));
+            // 날짜별 누락 건수 계산
+            const dateOmissionCount = filesInDate.reduce((sum, {result}) => {
+                const count = result.omission_num !== undefined && result.omission_num !== null ? result.omission_num : 0;
+                return sum + count;
+            }, 0);
             
-            return `
-            <div class="file-result-item ${result.success ? 'success' : 'error'}">
-                <div class="file-result-info">
-                    <div class="file-result-name">${result.filename || `파일 #${index + 1}`}</div>
-                    <div class="file-result-meta">
-                        날짜: ${result.date || result.file_date || '-'} | ${statusDetail}
+            const filesHtml = filesInDate.map((item) => {
+                const result = item.result;
+                const index = item.index;
+                let detectedCount = 0;
+                
+                if (result.omission_num !== undefined && result.omission_num !== null) {
+                    detectedCount = result.omission_num;
+                } else if (result.detected_issues) {
+                    if (typeof result.detected_issues === 'string') {
+                        try {
+                            const parsed = JSON.parse(result.detected_issues);
+                            detectedCount = Array.isArray(parsed) ? parsed.length : 0;
+                        } catch {
+                            detectedCount = 0;
+                        }
+                    } else if (Array.isArray(result.detected_issues)) {
+                        detectedCount = result.detected_issues.length;
+                    }
+                }
+                
+                const statusText = result.success ? '성공' : '실패';
+                const hasOmissions = detectedCount > 0;
+                
+                return `
+                <div class="file-result-item ${result.success ? 'success' : 'error'}">
+                    <div class="file-result-info">
+                        <div class="file-result-name">${result.filename || `파일 #${index + 1}`}</div>
+                    </div>
+                    <div class="file-result-action">
+                        <span class="file-result-badge ${result.success ? 'success' : 'error'}">
+                            ${statusText}
+                        </span>
+                        ${hasOmissions ? `<span class="file-result-badge omission">누락 ${detectedCount}</span>` : ''}
+                        <button class="view-details-btn" data-file-index="${index}">상세보기</button>
                     </div>
                 </div>
-                <div class="file-result-action">
-                    <span class="file-result-badge ${result.success ? 'success' : 'error'}">
-                        ${statusText}
-                    </span>
-                    <button class="view-details-btn" data-file-index="${index}">상세보기</button>
+                `;
+            }).join('');
+            
+            return `
+            <div class="date-group" data-date-id="${date}">
+                <div class="date-group-header" role="button" tabindex="0">
+                    <div class="date-group-header-left">
+                        <span class="date-group-toggle-icon">▼</span>
+                        <span class="date-group-title">${date}</span>
+                    </div>
+                    <span class="date-group-stats">${filesInDate.length}건 | 누락 ${dateOmissionCount}건</span>
+                </div>
+                <div class="date-group-files">
+                    ${filesHtml}
                 </div>
             </div>
-        `}).join('');
+            `;
+        }).join('');
+    }
+
+    setupDateGroupToggles(container) {
+        const headers = container.querySelectorAll('.date-group-header');
+        headers.forEach(header => {
+            header.addEventListener('click', () => {
+                const dateGroup = header.closest('.date-group');
+                const filesDiv = dateGroup.querySelector('.date-group-files');
+                const toggleIcon = header.querySelector('.date-group-toggle-icon');
+                
+                // 토글 상태 변경
+                filesDiv.classList.toggle('collapsed');
+                
+                // 화살표 회전 (collapsed 클래스에서 CSS 처리)
+                toggleIcon.classList.toggle('collapsed');
+            });
+            
+            // 초기 상태: 펼쳐짐
+            const filesDiv = header.closest('.date-group').querySelector('.date-group-files');
+            filesDiv.classList.remove('collapsed');
+            const toggleIcon = header.querySelector('.date-group-toggle-icon');
+            toggleIcon.classList.remove('collapsed');
+        });
     }
 
     showDetailModal(job, fileIndex) {

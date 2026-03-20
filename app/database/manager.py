@@ -198,13 +198,13 @@ class DatabaseManager:
             conn.close()
 
     def get_recent_jobs(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get most recent batch jobs.
+        """Get most recent batch jobs with omission statistics.
         
         Args:
             limit: Number of recent jobs to return (default 5)
             
         Returns:
-            List of job dictionaries sorted by created_at DESC
+            List of job dictionaries with omission counts
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -221,6 +221,16 @@ class DatabaseManager:
             rows = cursor.fetchall()
             result = []
             for row in rows:
+                job_id = row['id']
+                # Calculate total omissions for this job
+                cursor.execute("""
+                    SELECT COALESCE(SUM(omission_num), 0) as total_omissions
+                    FROM batch_results
+                    WHERE job_id = ?
+                """, (job_id,))
+                omission_row = cursor.fetchone()
+                total_omissions = omission_row['total_omissions'] if omission_row else 0
+                
                 result.append({
                     'id': row['id'],
                     'status': row['status'],
@@ -229,7 +239,8 @@ class DatabaseManager:
                     'created_at': row['created_at'],
                     'total_files': row['total_files'],
                     'success_files': row['success_files'],
-                    'failed_files': row['failed_files']
+                    'failed_files': row['failed_files'],
+                    'total_omissions': total_omissions  # 추가됨
                 })
             return result
         except Exception as e:
@@ -239,7 +250,7 @@ class DatabaseManager:
             conn.close()
 
     def get_all_jobs(self) -> List[Dict[str, Any]]:
-        """Get all batch jobs sorted by created_at DESC (most recent first)."""
+        """Get all batch jobs with omission statistics sorted by created_at DESC."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -254,6 +265,16 @@ class DatabaseManager:
             rows = cursor.fetchall()
             result = []
             for row in rows:
+                job_id = row['id']
+                # Calculate total omissions for this job
+                cursor.execute("""
+                    SELECT COALESCE(SUM(omission_num), 0) as total_omissions
+                    FROM batch_results
+                    WHERE job_id = ?
+                """, (job_id,))
+                omission_row = cursor.fetchone()
+                total_omissions = omission_row['total_omissions'] if omission_row else 0
+                
                 result.append({
                     'id': row['id'],
                     'status': row['status'],
@@ -262,7 +283,8 @@ class DatabaseManager:
                     'created_at': row['created_at'],
                     'total_files': row['total_files'],
                     'success_files': row['success_files'],
-                    'failed_files': row['failed_files']
+                    'failed_files': row['failed_files'],
+                    'total_omissions': total_omissions  # 추가됨
                 })
             return result
         except Exception as e:
@@ -272,7 +294,7 @@ class DatabaseManager:
             conn.close()
 
     def get_jobs_by_date_range(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
-        """Get jobs that overlap with the given date range (for duplicate detection).
+        """Get jobs that overlap with the given date range with omission statistics.
         
         Returns jobs where:
         - job.start_date <= given_end_date AND job.end_date >= given_start_date
@@ -294,6 +316,16 @@ class DatabaseManager:
             rows = cursor.fetchall()
             result = []
             for row in rows:
+                job_id = row['id']
+                # Calculate total omissions for this job
+                cursor.execute("""
+                    SELECT COALESCE(SUM(omission_num), 0) as total_omissions
+                    FROM batch_results
+                    WHERE job_id = ?
+                """, (job_id,))
+                omission_row = cursor.fetchone()
+                total_omissions = omission_row['total_omissions'] if omission_row else 0
+                
                 result.append({
                     'id': row['id'],
                     'status': row['status'],
@@ -302,7 +334,8 @@ class DatabaseManager:
                     'created_at': row['created_at'],
                     'total_files': row['total_files'],
                     'success_files': row['success_files'],
-                    'failed_files': row['failed_files']
+                    'failed_files': row['failed_files'],
+                    'total_omissions': total_omissions  # 추가됨
                 })
             return result
         except Exception as e:
