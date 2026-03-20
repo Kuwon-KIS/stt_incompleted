@@ -647,6 +647,13 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                                   idx, str(parse_err))
                     detected_issues = []
                 
+                # Handle omission_num type conversion safely
+                omission_num_raw = result_data.get("omission_num", 0)
+                if isinstance(omission_num_raw, str):
+                    omission_num = 0 if omission_num_raw == "None" else int(omission_num_raw)
+                else:
+                    omission_num = int(omission_num_raw) if omission_num_raw else 0
+                
                 result = BatchResult(
                     job_id=job_id,
                     file_date=result_data["date"],
@@ -655,7 +662,7 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                     text_content=result_data.get("text"),
                     category=result_data.get("category"),
                     summary=result_data.get("summary"),
-                    omission_num=int(result_data.get("omission_num", 0)),
+                    omission_num=omission_num,
                     detected_issues=detected_issues,  # 이미 리스트로 변환됨
                     processing_time_ms=result_data.get("processing_time_ms", 0),
                     created_at=result_data.get("created_at", datetime.now(timezone.utc))

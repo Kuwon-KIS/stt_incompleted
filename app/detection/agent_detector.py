@@ -197,11 +197,21 @@ class AgentDetector(DetectionStrategy):
             logger.debug("Agent detection completed: agent=%s, issues=%d, time=%.2fms",
                         self.agent_name, len(detected_issues), processing_time)
             
+            # Ensure omission_num is a valid integer, handle None and "None" string
+            omission_num_raw = agent_data.get("omission_num")
+            omission_num = 0
+            if omission_num_raw is not None and str(omission_num_raw).strip() != "None":
+                try:
+                    omission_num = int(omission_num_raw)
+                except (ValueError, TypeError):
+                    logger.debug("Could not convert omission_num to int: %s", omission_num_raw)
+                    omission_num = 0
+            
             return {
                 "detected_issues": detected_issues,
                 "category": agent_data.get("category"),
                 "summary": agent_data.get("summary"),
-                "omission_num": agent_data.get("omission_num"),
+                "omission_num": omission_num,
                 "confidence": 0.80,  # Agent doesn't provide confidence, use default
                 "raw_response": completion,
                 "tokens_used": 0,  # Agent API may not provide token count
