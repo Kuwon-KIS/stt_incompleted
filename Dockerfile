@@ -33,7 +33,7 @@ COPY ./app/__init__.py ./app/
 COPY ./app/config.py ./app/
 COPY ./app/models.py ./app/
 COPY ./app/sftp_client.py ./app/
-COPY ./app/utils.py ./app/
+COPY ./app/utils ./app/utils
 COPY ./app/database ./app/database
 COPY ./app/detection ./app/detection
 COPY ./app/routes ./app/routes

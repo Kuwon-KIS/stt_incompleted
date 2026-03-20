@@ -14,7 +14,7 @@
 #   ./scripts/build/build.sh dev 1.0.0 --load # Build and load to Docker
 #   ./scripts/build/build.sh dev 1.0.0 --run  # Build, load, and run container
 
-set -e
+set -euo pipefail
 
 # Get project root and source utilities
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -140,15 +140,18 @@ log_success "requirements.txt found"
 # Step 2: Check for existing images
 log_step "2" "Check for existing images"
 
-if docker images | grep -q "^${IMAGE_NAME}"; then
+if docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}' | grep -q "^${IMAGE_NAME}:"; then
     log_info "Found existing images:"
-    docker images | grep "^${IMAGE_NAME}" | awk '{printf "   %s:%s (%s)\n", $1, $2, $3}'
+    docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}' | grep "^${IMAGE_NAME}:" | awk '{printf "   %s:%s (%s)\n", $1, $2, $3}'
     echo ""
     read -p "Rebuild and delete existing images? (y/n): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        docker rmi $(docker images | grep "^${IMAGE_NAME}" | awk '{print $3}') || true
-        log_success "Existing images deleted"
+        mapfile -t image_refs < <(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^${IMAGE_NAME}:" || true)
+        if [[ ${#image_refs[@]} -gt 0 ]]; then
+            docker rmi "${image_refs[@]}" || true
+        fi
+        log_success "Existing images cleanup attempted"
     else
         log_info "Using existing images"
     fi
@@ -198,26 +201,26 @@ log_info "Filename: $TAR_FILENAME"
 if command -v pigz &> /dev/null; then
     CORES=$(nproc)
     log_info "Using pigz for parallel compression (cores: $CORES)"
-    if docker save "$FULL_IMAGE" 2>&1 | tee -a "$BUILD_LOG" | pigz -6 -p $CORES > "$TAR_FILEPATH" 2>&1; then
+    if docker save "$FULL_IMAGE" 2>>"$BUILD_LOG" | pigz -6 -p "$CORES" > "$TAR_FILEPATH"; then
         :
     else
         log_error "Failed to compress image with pigz"
     fi
 else
     log_info "Using gzip for compression (pigz not available)"
-    if docker save "$FULL_IMAGE" 2>&1 | tee -a "$BUILD_LOG" | gzip -6 > "$TAR_FILEPATH" 2>&1; then
+    if docker save "$FULL_IMAGE" 2>>"$BUILD_LOG" | gzip -6 > "$TAR_FILEPATH"; then
         :
     else
         log_error "Failed to compress image with gzip"
     fi
 fi
 
-if [ -f "$TAR_FILEPATH" ]; then
+if [ -s "$TAR_FILEPATH" ]; then
     TAR_SIZE=$(du -h "$TAR_FILEPATH" | awk '{print $1}')
     log_success "Image exported (size: $TAR_SIZE)"
     log_info "File: $TAR_FILEPATH"
 else
-    log_error "Failed to export image: file not created at $TAR_FILEPATH"
+    log_error "Failed to export image: empty or missing file at $TAR_FILEPATH"
 fi
 
 # Step 6: Save build metadata
