@@ -7,6 +7,14 @@ class App {
         this.currentPage = 'dashboard';
         this.statusCheckInterval = null;
         this.autoAnalysisDebounceTimer = null;  // Auto-analysis debounce timer
+        this.pollTimer = null;  // Job status polling timer
+        this.pollInterval = 3000;  // Poll every 3 seconds (3000ms) during active job
+        this.idlePollInterval = 60000;  // Poll every 60 seconds during idle
+        this.pollingJobId = null;  // Currently polling job ID
+        this.lastPolledStatus = null;  // Track last status to avoid logging duplicate status
+        this.isIdle = false;  // Whether in idle mode (no active jobs)
+        this.noActiveJobCount = 0;  // Count consecutive polls with no active jobs
+        this.idleThreshold = 5;  // Switch to idle mode after 5 consecutive no-active-job polls
         this.init();
     }
 
@@ -224,6 +232,193 @@ class App {
             this.initializeBatchCalendar();
         } else if (pageName === 'history') {
             this.loadJobHistory();
+        }
+    }
+
+    /**
+     * Job status polling - check if async batch job completed
+     * Adaptive polling: 3s when active, 60s in idle mode, pause when no jobs
+     */
+    startJobPolling(jobId) {
+        if (!jobId) {
+            console.warn('⚠️ Job ID not provided for polling');
+            return;
+        }
+        
+        // Stop any existing polling
+        this.stopJobPolling();
+        
+        this.pollingJobId = jobId;
+        this.lastPolledStatus = null;
+        this.noActiveJobCount = 0;
+        this.isIdle = false;  // Exit idle mode when new job submitted
+        
+        // Poll immediately first, then every 3 seconds
+        this.pollJobStatus(jobId);
+        this.pollTimer = setInterval(() => {
+            this.pollJobStatus(jobId);
+        }, this.pollInterval);
+    }
+
+    /**
+     * Stop job polling
+     */
+    stopJobPolling() {
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+        }
+        this.pollingJobId = null;
+        this.lastPolledStatus = null;
+        this.noActiveJobCount = 0;
+    }
+
+    /**
+     * Switch to idle polling (longer interval when no active jobs detected)
+     */
+    enterIdleMode() {
+        console.log('😴 Entering idle mode - switching to 60s polling');
+        this.isIdle = true;
+        
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+        }
+        
+        // Resume polling with 60 second interval
+        this.pollTimer = setInterval(() => {
+            this.pollJobStatus(this.pollingJobId);
+        }, this.idlePollInterval);
+    }
+
+    /**
+     * Resume normal polling from idle mode
+     */
+    resumeNormalPolling() {
+        if (this.isIdle) {
+            console.log('⏰ Resuming normal 3s polling');
+            this.isIdle = false;
+            this.noActiveJobCount = 0;
+            
+            if (this.pollTimer) {
+                clearInterval(this.pollTimer);
+            }
+            
+            // Resume 3s interval
+            this.pollTimer = setInterval(() => {
+                this.pollJobStatus(this.pollingJobId);
+            }, this.pollInterval);
+        }
+    }
+
+    /**
+     * Poll single job status and refresh UI if completed or status changed
+     * Adaptive polling: tracks active jobs to optimize polling frequency
+     */
+    async pollJobStatus(jobId) {
+        try {
+            const response = await fetch(`/process/batch/status/${jobId}`);
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+            const fullJob = await response.json();
+            
+            // Log only if status changed
+            if (fullJob.status !== this.lastPolledStatus) {
+                console.log(`📊 Job ${jobId} status: ${fullJob.status}`);
+                this.lastPolledStatus = fullJob.status;
+            }
+            
+            // Track if this is an active job (running) or idle (completed/failed/pending)
+            const isActive = fullJob.status === 'running';
+            
+            if (isActive) {
+                // Reset idle counter when job is active
+                this.noActiveJobCount = 0;
+            } else if (fullJob.status === 'completed' || fullJob.status === 'failed') {
+                // Job is done
+                this.stopJobPolling();
+                console.log(`✅ Job ${jobId} finished with status: ${fullJob.status}`);
+                return;
+            } else {
+                // Job is pending or in other state - count as inactive
+                this.noActiveJobCount++;
+                
+                // Switch to idle mode if no activity detected for threshold
+                if (!this.isIdle && this.noActiveJobCount >= this.idleThreshold) {
+                    this.enterIdleMode();
+                    return;
+                }
+            }
+            
+            // Update job item in the list
+            const jobElement = document.querySelector(`[data-job-id="${jobId}"]`);
+            if (jobElement) {
+                // Update the job item with fresh data
+                jobElement.replaceWith(
+                    new DOMParser().parseFromString(this.renderJobItem(fullJob), 'text/html').body
+                );
+                
+                // Re-attach event listeners for the updated job item
+                this.attachJobItemEventListeners(jobElement);
+            }
+        } catch (error) {
+            // Silently continue polling on errors, don't spam console
+        }
+    }
+
+    /**
+     * Attach event listeners to a job item for expandable results
+     */
+    attachJobItemEventListeners(jobElement) {
+        if (!jobElement) return;
+        
+        const jobItem = jobElement.closest ? jobElement.closest('.job-item') : jobElement;
+        if (!jobItem) return;
+        
+        const toggleBtn = jobItem.querySelector('.job-toggle');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const fileResults = jobItem?.querySelector('.file-results');
+                
+                if (fileResults) {
+                    const isCurrentlyHidden = fileResults.style.display === 'none';
+                    
+                    // 파일이 보여질 예정이고, 내용이 아직 없으면 로드
+                    if (isCurrentlyHidden && fileResults.innerHTML.trim() === '') {
+                        const jobId = jobItem?.dataset.jobId;
+                        if (jobId) {
+                            try {
+                                const response = await fetch(`/process/batch/status/${jobId}`);
+                                if (!response.ok) {
+                                    throw new Error(`API 응답 실패: ${response.status}`);
+                                }
+                                const fullJob = await response.json();
+                                
+                                if (fullJob.results && Array.isArray(fullJob.results) && fullJob.results.length > 0) {
+                                    fileResults.innerHTML = this.renderFileResults(fullJob);
+                                    this.setupDateGroupToggles(fileResults);
+                                } else {
+                                    fileResults.innerHTML = '<p class="empty-state">처리 결과가 없습니다</p>';
+                                }
+                            } catch (error) {
+                                console.error('❌ 파일 결과 로드 실패:', error);
+                                fileResults.innerHTML = `<p class="empty-state">결과 로드 실패: ${error.message}</p>`;
+                            }
+                        }
+                    }
+                    
+                    // display 토글
+                    fileResults.style.display = isCurrentlyHidden ? 'block' : 'none';
+                    // expanded 클래스 토글
+                    toggleBtn.classList.toggle('expanded', isCurrentlyHidden);
+                    // 텍스트 업데이트
+                    const textNode = toggleBtn.childNodes[toggleBtn.childNodes.length - 1];
+                    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                        textNode.textContent = isCurrentlyHidden ? ' 처리 파일 목록 및 상세 결과 숨기기' : ' 처리 파일 목록 및 상세 결과 보기';
+                    }
+                }
+            });
         }
     }
 
@@ -676,53 +871,9 @@ class App {
 
         container.innerHTML = jobs.map(job => this.renderJobItem(job)).join('');
 
-        // 확장 버튼 이벤트 등록
-        const toggleBtns = document.querySelectorAll('.job-toggle');
-        
-        toggleBtns.forEach((btn, idx) => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const jobItem = btn.closest('.job-item');
-                const fileResults = jobItem?.querySelector('.file-results');
-                
-                if (fileResults) {
-                    const isCurrentlyHidden = fileResults.style.display === 'none';
-                    
-                    // 파일이 보여질 예정이고, 내용이 아직 없으면 로드
-                    if (isCurrentlyHidden && fileResults.innerHTML.trim() === '') {
-                        const jobId = jobItem?.dataset.jobId;
-                        if (jobId) {
-                            try {
-                                const response = await fetch(`/process/batch/status/${jobId}`);
-                                if (!response.ok) {
-                                    throw new Error(`API 응답 실패: ${response.status}`);
-                                }
-                                const fullJob = await response.json();
-                                
-                                if (fullJob.results && Array.isArray(fullJob.results) && fullJob.results.length > 0) {
-                                    fileResults.innerHTML = this.renderFileResults(fullJob);
-                                    this.setupDateGroupToggles(fileResults);
-                                } else {
-                                    fileResults.innerHTML = '<p class="empty-state">처리 결과가 없습니다</p>';
-                                }
-                            } catch (error) {
-                                console.error('❌ 파일 결과 로드 실패:', error);
-                                fileResults.innerHTML = `<p class="empty-state">결과 로드 실패: ${error.message}</p>`;
-                            }
-                        }
-                    }
-                    
-                    // display 토글
-                    fileResults.style.display = isCurrentlyHidden ? 'block' : 'none';
-                    // expanded 클래스 토글
-                    btn.classList.toggle('expanded', isCurrentlyHidden);
-                    // 텍스트 업데이트
-                    const textNode = btn.childNodes[btn.childNodes.length - 1];
-                    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-                        textNode.textContent = isCurrentlyHidden ? ' 처리 파일 목록 및 상세 결과 숨기기' : ' 처리 파일 목록 및 상세 결과 보기';
-                    }
-                }
-            });
+        // 각 job item의 이벤트 리스너 등록
+        document.querySelectorAll('.job-item').forEach(jobElement => {
+            this.attachJobItemEventListeners(jobElement);
         });
 
         // 상세보기 버튼 이벤트 (Event Delegation)
@@ -798,10 +949,12 @@ class App {
             totalOmissions = job.total_omissions;
         } else if (job.results) {
             totalOmissions = job.results.reduce((sum, r) => {
-                // Check omission_num first (numeric value from DB)
-                if (r.omission_num) return sum + r.omission_num;
-                // Fallback to detected_issues length
-                return sum + (r.detected_issues ? r.detected_issues.length : 0);
+                // Properly handle omission_num: safe null/undefined check and string->int conversion
+                let count = 0;
+                if (r.omission_num !== null && r.omission_num !== undefined) {
+                    count = typeof r.omission_num === 'string' ? parseInt(r.omission_num, 10) : r.omission_num;
+                }
+                return sum + (isNaN(count) ? 0 : count);
             }, 0);
         } else {
             totalOmissions = 0;
@@ -861,10 +1014,13 @@ class App {
         return sortedDates.map(date => {
             const filesInDate = groupedByDate[date];
             
-            // 날짜별 누락 건수 계산
+            // 날짜별 누락 건수 계산 (문자열->정수 변환 포함)
             const dateOmissionCount = filesInDate.reduce((sum, {result}) => {
-                const count = result.omission_num !== undefined && result.omission_num !== null ? result.omission_num : 0;
-                return sum + count;
+                let count = 0;
+                if (result.omission_num !== undefined && result.omission_num !== null) {
+                    count = typeof result.omission_num === 'string' ? parseInt(result.omission_num, 10) : result.omission_num;
+                }
+                return sum + (isNaN(count) ? 0 : count);
             }, 0);
             
             const filesHtml = filesInDate.map((item) => {
@@ -873,7 +1029,8 @@ class App {
                 let detectedCount = 0;
                 
                 if (result.omission_num !== undefined && result.omission_num !== null) {
-                    detectedCount = result.omission_num;
+                    detectedCount = typeof result.omission_num === 'string' ? parseInt(result.omission_num, 10) : result.omission_num;
+                    detectedCount = isNaN(detectedCount) ? 0 : detectedCount;
                 } else if (result.detected_issues) {
                     if (typeof result.detected_issues === 'string') {
                         try {
@@ -989,7 +1146,13 @@ class App {
         if (result.success) {
             if (category) category.textContent = result.category || '-';
             if (summary) summary.textContent = result.summary || '-';
-            if (omissionNum) omissionNum.textContent = result.omission_num || '0';
+            if (omissionNum) {
+                let count = result.omission_num || 0;
+                if (typeof count === 'string') {
+                    count = parseInt(count, 10);
+                }
+                omissionNum.textContent = isNaN(count) ? '0' : count;
+            }
         } else {
             if (category) category.textContent = '처리 실패';
             if (summary) summary.textContent = result.error || '알 수 없는 오류';
@@ -1738,11 +1901,17 @@ class App {
             // 현재 작업을 메모리에 저장 (history 페이지에서 표시하기 위함)
             window.currentJob = response;
             
+            // Extract job_id from response (handle both new and duplicate job cases)
+            const jobId = response.job_id;
+            
             // 성공 메시지
-            alert(`배치 처리가 시작되었습니다!\n작업 ID: ${response.job_id}`);
+            alert(`배치 처리가 시작되었습니다!\n작업 ID: ${jobId}`);
             
             // UI 초기화
             this.resetBatchUI();
+            
+            // 폴링 시작 (3초마다 작업 상태 확인)
+            this.startJobPolling(jobId);
             
             // 이력 페이지로 이동
             setTimeout(() => {

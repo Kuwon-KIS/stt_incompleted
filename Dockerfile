@@ -27,10 +27,22 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (includes static files and vendor libraries)
-# - app/static/ - CSS, JS, HTML
-# - app/static/vendor/flatpickr/ - Locally cached flatpickr for on-prem deployment (no CDN access)
-COPY ./app ./app
+# Copy application Python code (excluding static files first)
+COPY ./app/main.py ./app/
+COPY ./app/__init__.py ./app/
+COPY ./app/config.py ./app/
+COPY ./app/models.py ./app/
+COPY ./app/sftp_client.py ./app/
+COPY ./app/utils.py ./app/
+COPY ./app/database ./app/database
+COPY ./app/detection ./app/detection
+COPY ./app/routes ./app/routes
+COPY ./app/templates ./app/templates
+
+# Copy static files (CSS, JS, HTML, vendor libraries) in separate layer
+# Copy app/static/ - CSS, JS, HTML
+# Copy app/static/vendor/flatpickr/ - Locally cached flatpickr for on-prem deployment (no CDN access)
+COPY ./app/static ./app/static
 
 # Copy environment configuration directory (must exist with .gitkeep for git tracking)
 # All .env files inside are git-ignored for security
