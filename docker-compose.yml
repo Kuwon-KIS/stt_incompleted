@@ -21,7 +21,7 @@ services:
     # Environment variables (can override .env file)
     environment:
       - APP_ENV=dev
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     
     # Health check
     healthcheck:

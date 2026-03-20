@@ -56,35 +56,85 @@ class AgentDetector(DetectionStrategy):
             List of issue dictionaries with structured format
         """
         try:
-            # Extract omission information
-            omission_steps = agent_result.get("omission_steps", [])
-            omission_reasons = agent_result.get("omission_reasons", [])
+            def _to_list(value: Any) -> List[Any]:
+                """Convert a mixed value into a list for robust schema handling."""
+                if value is None:
+                    return []
+                if isinstance(value, list):
+                    return value
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    if not stripped:
+                        return []
+                    try:
+                        parsed = json.loads(stripped)
+                        return parsed if isinstance(parsed, list) else [value]
+                    except (json.JSONDecodeError, TypeError):
+                        return [value]
+                return [value]
+
+            # 1) Prefer explicit detected_issues when provided.
+            raw_detected_issues = agent_result.get("detected_issues")
+            issues: List[Dict[str, Any]] = []
+            for i, issue in enumerate(_to_list(raw_detected_issues)):
+                if isinstance(issue, dict):
+                    step_value = issue.get("step") or ""
+                    reason_value = issue.get("reason") or ""
+                    if not str(step_value).strip() and not str(reason_value).strip():
+                        continue
+                    issues.append({
+                        "index": i,
+                        "step": step_value,
+                        "reason": reason_value,
+                        "category": issue.get("category") or agent_result.get("category") or "unknown"
+                    })
+                else:
+                    if not str(issue).strip():
+                        continue
+                    issues.append({
+                        "index": i,
+                        "step": str(issue),
+                        "reason": "",
+                        "category": agent_result.get("category") or "unknown"
+                    })
+
+            # 2) Fallback to omission_steps + omission_detected_reasons when detected_issues is missing/empty.
+            omission_steps = _to_list(agent_result.get("omission_steps", []))
+            omission_detected_reasons = _to_list(agent_result.get("omission_detected_reasons", []))
             omission_num_raw = agent_result.get("omission_num", 0)
             try:
-                if omission_num_raw is None or str(omission_num_raw).strip() == "None":
-                    omission_num = 0
-                else:
-                    omission_num = int(omission_num_raw)
+                omission_num = int(omission_num_raw) if omission_num_raw is not None else 0
             except (TypeError, ValueError):
                 omission_num = 0
-            
-            # Validate that steps and reasons are paired
-            if len(omission_steps) != len(omission_reasons):
-                logger.warning("Mismatch between omission_steps (%d) and omission_reasons (%d)",
-                              len(omission_steps), len(omission_reasons))
-            
-            # Create issue list pairing steps with reasons
-            issues = []
-            for i, (step, reason) in enumerate(zip(omission_steps, omission_reasons)):
-                issues.append({
-                    "index": i,
-                    "step": step,
-                    "reason": reason,
-                    "category": agent_result.get("category", "unknown")
-                })
+            logger.debug("[extract_issues] omission_num=%s, steps=%d, reasons=%d, detected_issues=%s", 
+                        omission_num_raw, len(omission_steps), len(omission_detected_reasons), 
+                        type(raw_detected_issues).__name__)
+
+            if not issues:
+                if len(omission_steps) != len(omission_detected_reasons):
+                    logger.warning(
+                        "Mismatch between omission_steps (%d) and omission_detected_reasons (%d)",
+                        len(omission_steps),
+                        len(omission_detected_reasons)
+                    )
+
+                pair_count = max(len(omission_steps), len(omission_detected_reasons))
+                for i in range(pair_count):
+                    step = omission_steps[i] if i < len(omission_steps) else ""
+                    reason = omission_detected_reasons[i] if i < len(omission_detected_reasons) else ""
+                    if not str(step).strip() and not str(reason).strip():
+                        continue
+                    issues.append({
+                        "index": i,
+                        "step": str(step) if step is not None else "",
+                        "reason": str(reason) if reason is not None else "",
+                        "category": agent_result.get("category") or "unknown"
+                    })
 
             if omission_num != len(issues):
-                logger.debug("omission_num (%d) differs from extracted issues (%d)", omission_num, len(issues))
+                logger.debug("[extract_issues] omission_num (%d) differs from issues count (%d)", omission_num, len(issues))
+            
+            logger.debug("[extract_issues_result] issues=%d, category=%s", len(issues), agent_result.get("category"))
             
             logger.debug("Extracted %d issues from Agent response", len(issues))
             return issues
@@ -97,28 +147,46 @@ class AgentDetector(DetectionStrategy):
 
         Supports mock format ({"result": "...json..."}) and on-prem nested answer format.
         """
+        # Step 1: Parse top-level mock payload if present.
+        agent_data: Any = result_data
         if "result" in result_data:
             completion = result_data.get("result", "")
             if not completion:
                 return {}
             try:
-                return json.loads(completion)
+                agent_data = json.loads(completion)
             except (json.JSONDecodeError, TypeError):
                 logger.warning("Mock result is not valid JSON")
                 return {}
 
-        agent_data: Any = result_data
-        if "answer" in agent_data and isinstance(agent_data["answer"], dict):
-            if "answer" in agent_data["answer"]:
-                agent_data = agent_data["answer"]["answer"]
+        # Step 2: Repeatedly unwrap nested answer structures.
+        # Examples handled:
+        # - {"answer": {"answer": {...}}}
+        # - {"answer": "{...json...}"}
+        # - "{...json...}"
+        max_depth = 6
+        for _ in range(max_depth):
+            if isinstance(agent_data, str):
+                try:
+                    agent_data = json.loads(agent_data)
+                    continue
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning("Nested answer is a string but not valid JSON")
+                    return {}
 
-        if isinstance(agent_data, str):
-            try:
-                agent_data = json.loads(agent_data)
-                logger.debug("Parsed nested answer as JSON string")
-            except (json.JSONDecodeError, TypeError):
-                logger.warning("Nested answer is a string but not valid JSON")
+            if not isinstance(agent_data, dict):
+                logger.warning("Agent response normalized to non-dict type")
                 return {}
+
+            # Stop when payload already looks like the final analysis object.
+            if any(k in agent_data for k in ("omission_num", "omission_steps", "omission_detected_reasons", "detected_issues", "summary", "category")):
+                break
+
+            if "answer" in agent_data:
+                agent_data = agent_data.get("answer")
+                continue
+
+            break
 
         if not isinstance(agent_data, dict):
             logger.warning("Agent response normalized to non-dict type")
@@ -199,6 +267,11 @@ class AgentDetector(DetectionStrategy):
             
             completion = result_data.get("result", "") if "result" in result_data else json.dumps(result_data)
             agent_data = self._normalize_agent_result(result_data)
+
+            if isinstance(agent_data, dict):
+                logger.debug("Normalized agent data keys: %s", sorted(agent_data.keys()))
+            else:
+                logger.debug("Normalized agent data type: %s", type(agent_data).__name__)
             
             logger.debug("Agent response format: %s", "mock" if "result" in result_data else "on-prem")
             
@@ -210,15 +283,20 @@ class AgentDetector(DetectionStrategy):
             logger.debug("Agent detection completed: agent=%s, issues=%d, time=%.2fms",
                         self.agent_name, len(detected_issues), processing_time)
             
-            # Ensure omission_num is a valid integer, handle None and "None" string
+            # Keep omission_num consistent with parsed/filtered issues.
             omission_num_raw = agent_data.get("omission_num")
-            omission_num = 0
-            if omission_num_raw is not None and str(omission_num_raw).strip() != "None":
-                try:
-                    omission_num = int(omission_num_raw)
-                except (ValueError, TypeError):
-                    logger.debug("Could not convert omission_num to int: %s", omission_num_raw)
-                    omission_num = 0
+            try:
+                omission_num = int(omission_num_raw) if omission_num_raw is not None else 0
+            except (TypeError, ValueError):
+                omission_num = 0
+
+            if omission_num != len(detected_issues):
+                logger.debug(
+                    "[detect] Adjusting omission_num from %d to detected_issues count %d",
+                    omission_num,
+                    len(detected_issues)
+                )
+                omission_num = len(detected_issues)
             
             return {
                 "detected_issues": detected_issues,

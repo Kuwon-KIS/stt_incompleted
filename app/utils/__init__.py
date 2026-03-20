@@ -87,6 +87,12 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     else:
         root_logger.setLevel(level)
 
+    # Align common logger namespaces so DEBUG works consistently under uvicorn.
+    logging.getLogger("app").setLevel(level)
+    logging.getLogger("uvicorn").setLevel(level)
+    logging.getLogger("uvicorn.error").setLevel(level)
+    logging.getLogger("uvicorn.access").setLevel(level)
+
     # Keep Paramiko warnings/errors, suppress noisy connection INFO/DEBUG logs.
     for logger_name in ["paramiko", "paramiko.transport", "paramiko.transport.sftp"]:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
