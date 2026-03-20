@@ -114,8 +114,17 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger.addHandler(file_handler)
     
     # Suppress verbose paramiko INFO/DEBUG logs, but keep WARNING and ERROR
+    # By setting level to WARNING on paramiko loggers and adding console/file handlers at WARNING level
+    paramiko_handler = logging.StreamHandler()
+    paramiko_handler.setLevel(logging.WARNING)  # Only WARNING and above
+    paramiko_handler.setFormatter(formatter)
+    
     for logger_name in ["paramiko", "paramiko.transport", "paramiko.transport.sftp"]:
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
+        param_logger = logging.getLogger(logger_name)
+        param_logger.setLevel(logging.WARNING)
+        param_logger.handlers.clear()  # Clear default handlers
+        param_logger.addHandler(paramiko_handler)  # Add our own handler with WARNING level
+        param_logger.propagate = False  # Don't propagate to root logger
     
     return logger
 
