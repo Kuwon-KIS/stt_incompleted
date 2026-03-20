@@ -125,6 +125,11 @@ class BatchProcessRequest(BaseModel):
     force_reprocess: bool = False  # True: 기존 완료된 작업도 재처리
     handle_overlap: str = "new"     # 'new' = 새 작업만 / 'reprocess_all' = 전체 재처리 / 'skip_overlap' = 겹치는 부분 제외하고 처리
     
+    # Step 3: 분석 결과 메타데이터 (선택사항, 재사용을 위해 프론트에서 전달)
+    analysis_files_per_date: Dict[str, int] | None = None  # {'YYYYMMDD': file_count, ...}
+    analysis_new_dates: List[str] | None = None  # 처리 대상 날짜 목록
+    analysis_timestamp: str | None = None  # 분석 시각 (ISO format)
+    
     def resolve_config(self, config):
         """Resolve all None values from config defaults."""
         # SFTP settings

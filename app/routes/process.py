@@ -249,6 +249,20 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
         logger.info("[BATCH_STEP_2_OK] force_reprocess adjusted")
         sys.stdout.flush()
         
+        # Step 3: Check for pre-fetched analysis metadata (optimization to avoid redundant SFTP calls)
+        logger.info("[BATCH_STEP_3_START] Checking for pre-fetched analysis metadata")
+        analysis_metadata_available = False
+        if req.analysis_files_per_date and req.analysis_new_dates:
+            analysis_metadata_available = True
+            logger.info("[BATCH_STEP_3_META] Analysis metadata found: %d dates with file counts", 
+                       len(req.analysis_new_dates))
+            logger.info("[BATCH_STEP_3_FILES] New dates: %s", req.analysis_new_dates)
+            logger.info("[BATCH_STEP_3_COUNTS] Files per date: %s", req.analysis_files_per_date)
+        else:
+            logger.info("[BATCH_STEP_3_NO_META] No analysis metadata provided, will fetch from SFTP")
+        logger.info("[BATCH_STEP_3_OK] Metadata check completed (available=%s)", analysis_metadata_available)
+        sys.stdout.flush()
+        
         logger.info("[BATCH_STATUS_UPDATE] Updating status to 'running'")
         sys.stdout.flush()
         try:
@@ -268,20 +282,29 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
         # APP_ENV=local이면 Mock 배치 처리 (async 병렬 처리)
         if config.APP_ENV == "local":
             logger.info("[BATCH_MODE] Mock mode: creating sample results with async processing...")
-            
-            # 날짜 범위 내의 모든 날짜 생성
-            current = datetime.strptime(req.start_date, "%Y%m%d")
-            end = datetime.strptime(req.end_date, "%Y%m%d")
-            
+
             files_to_process = []
             file_idx = 0
-            
-            while current <= end:
-                date_str = current.strftime("%Y%m%d")
+
+            if analysis_metadata_available:
+                target_dates = req.analysis_new_dates
+            else:
+                target_dates = []
+                current = datetime.strptime(req.start_date, "%Y%m%d")
+                end = datetime.strptime(req.end_date, "%Y%m%d")
+                while current <= end:
+                    target_dates.append(current.strftime("%Y%m%d"))
+                    current += timedelta(days=1)
+
+            for date_str in target_dates:
                 date_files[date_str] = {"total": 0, "success": 0, "failed": 0}
-                
-                # 각 날짜마다 3개의 파일
-                for i in range(1, 4):
+
+                # 분석 메타가 있으면 날짜별 파일 수를 그대로 사용, 없으면 mock 기본값 3 사용
+                file_count = 3
+                if analysis_metadata_available and req.analysis_files_per_date:
+                    file_count = req.analysis_files_per_date.get(date_str, 0)
+
+                for i in range(1, file_count + 1):
                     filename = f"{date_str}_{i:03d}.txt"
                     
                     # Mock detection result
@@ -311,8 +334,6 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                         "mock_issues": mock_issues
                     })
                     file_idx += 1
-                
-                current += timedelta(days=1)
             
             # Async helper to process mock file
             async def process_mock_file_async(file_info):
@@ -386,14 +407,20 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                 )
                 logger.info("[BATCH_SFTP_CONNECTED] SFTP client connected for listing")
                 
-                # 2. 날짜 범위별 파일 조회
-                current = datetime.strptime(req.start_date, "%Y%m%d")
-                end = datetime.strptime(req.end_date, "%Y%m%d")
-                
                 files_to_process = []
-                
-                while current <= end:
-                    date_str = current.strftime("%Y%m%d")
+
+                if analysis_metadata_available:
+                    target_dates = req.analysis_new_dates
+                    logger.info("[BATCH_SFTP_TARGET_DATES] Using analysis metadata dates: %s", target_dates)
+                else:
+                    target_dates = []
+                    current = datetime.strptime(req.start_date, "%Y%m%d")
+                    end = datetime.strptime(req.end_date, "%Y%m%d")
+                    while current <= end:
+                        target_dates.append(current.strftime("%Y%m%d"))
+                        current += timedelta(days=1)
+
+                for date_str in target_dates:
                     # Handle trailing slash in SFTP_ROOT_PATH to avoid double slashes
                     root_path = config.SFTP_ROOT_PATH.rstrip('/')
                     date_path = f"{root_path}/{date_str}"
@@ -413,13 +440,10 @@ async def run_batch_async(job_id: str, req: BatchProcessRequest):
                                 "date_path": date_path,
                                 "filename": file_name
                             })
-                        
-                        current += timedelta(days=1)
                     
                     except Exception as dir_error:
                         logger.warning("[BATCH_DIR_ERROR] Failed to access directory %s: %s", 
                                      date_path, str(dir_error))
-                        current += timedelta(days=1)
                 
                 # File listing complete, close the initial SFTP connection (individual threads will create their own)
                 logger.info("[BATCH_SFTP_FILES_COLLECTED] Collected %d files to process", len(files_to_process))

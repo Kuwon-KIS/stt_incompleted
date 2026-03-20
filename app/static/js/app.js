@@ -1522,10 +1522,15 @@ class App {
         
         
         try {
+            const includeEmpty = document.getElementById('include-empty-toggle')?.checked || false;
+            const availableDates = window.batchDateRange?.available_dates || null;
+
             // API 호출
             const response = await api.analyzeBatch({
                 start_date: selectedRange.start.replace(/-/g, ''),
-                end_date: selectedRange.end.replace(/-/g, '')
+                end_date: selectedRange.end.replace(/-/g, ''),
+                include_empty: includeEmpty,
+                available_dates: availableDates
             });
             
             
@@ -1714,6 +1719,17 @@ class App {
                 option_id: selectedOption.value
             };
             
+            // Step 3: 분석 결과 메타데이터를 요청에 포함 (재사용을 위해)
+            if (window.batchAnalysisResult) {
+                const analysis = window.batchAnalysisResult;
+                request.analysis_files_per_date = analysis.files_per_date || {};
+                request.analysis_new_dates = analysis.new_dates || [];
+                request.analysis_timestamp = new Date().toISOString();
+                console.log('📊 분석 메타 포함:', {
+                    files_per_date: request.analysis_files_per_date,
+                    new_dates: request.analysis_new_dates
+                });
+            }
             
             // API 호출
             const response = await api.submitBatchWithOption(request);

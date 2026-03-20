@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.database import DatabaseManager
 from app.config import config
@@ -438,49 +439,67 @@ async def analyze_batch(req: BatchAnalysisRequest):
         
         try:
             if analysis.new_dates:
-                # Ensure SFTP client is available
-                if 'client' not in locals() or not client:
-                    if config.APP_ENV == "local":
-                        from app.sftp_client import MockSFTPClient
-                        client = MockSFTPClient(
-                            host=config.SFTP_HOST or "mock",
-                            username=config.SFTP_USERNAME,
-                            password=config.SFTP_PASSWORD
-                        )
-                    else:
-                        logger.info(f"[BATCH_ANALYSIS] Creating new SFTP client to count files")
-                        client = create_sftp_client(
+                root_path = config.SFTP_ROOT_PATH.rstrip('/')
+
+                if config.APP_ENV == "local":
+                    # Local(mock) path: keep sequential and reuse a single mock client.
+                    from app.sftp_client import MockSFTPClient
+                    client = MockSFTPClient(
+                        host=config.SFTP_HOST or "mock",
+                        username=config.SFTP_USERNAME,
+                        password=config.SFTP_PASSWORD
+                    )
+
+                    for date_str in analysis.new_dates:
+                        try:
+                            date_path = f"{root_path}/{date_str}"
+                            logger.info(f"[BATCH_ANALYSIS] Counting files for date {date_str}, path: {date_path}")
+                            files = client.list_files(path=date_path, suffix=".txt")
+                            file_count = len(files) if files else 0
+                            files_per_date[date_str] = file_count
+                            total_files_to_process += file_count
+                            logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
+                        except Exception as e:
+                            logger.error(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {e}", exc_info=True)
+                            files_per_date[date_str] = 0
+                else:
+                    # Real SFTP path: parallelize per-date counting with separate connections per worker.
+                    max_workers = min(max(1, config.BATCH_CONCURRENCY), len(analysis.new_dates))
+                    logger.info(f"[BATCH_ANALYSIS] Parallel counting start: dates={len(analysis.new_dates)}, workers={max_workers}")
+
+                    def _count_files_for_date(date_str: str):
+                        date_path = f"{root_path}/{date_str}"
+                        thread_client = create_sftp_client(
                             host=config.SFTP_HOST,
                             port=config.SFTP_PORT,
                             username=config.SFTP_USERNAME,
                             password=config.SFTP_PASSWORD,
                             pkey=config.SFTP_KEY
                         )
-                
-                for date_str in analysis.new_dates:
-                    try:
-                        root_path = config.SFTP_ROOT_PATH.rstrip('/')
-                        date_path = f"{root_path}/{date_str}"
-                        logger.info(f"[BATCH_ANALYSIS] Counting files for date {date_str}, path: {date_path}")
-                        
-                        files = client.list_files(path=date_path, suffix=".txt")
-                        logger.info(f"[BATCH_ANALYSIS] SFTP list_files returned {len(files) if files else 0} files: {files}")
-                        
-                        file_count = len(files) if files else 0
-                        files_per_date[date_str] = file_count
-                        total_files_to_process += file_count
-                        logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
-                    except Exception as e:
-                        logger.error(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {e}", exc_info=True)
-                        files_per_date[date_str] = 0
+                        try:
+                            files = thread_client.list_files(path=date_path, suffix=".txt")
+                            return date_str, len(files) if files else 0, None
+                        except Exception as e:
+                            return date_str, 0, str(e)
+                        finally:
+                            try:
+                                thread_client.close()
+                            except Exception:
+                                pass
+
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = [executor.submit(_count_files_for_date, d) for d in analysis.new_dates]
+                        for future in as_completed(futures):
+                            date_str, file_count, error = future.result()
+                            files_per_date[date_str] = file_count
+                            total_files_to_process += file_count
+                            if error:
+                                logger.error(f"[BATCH_ANALYSIS] Failed to count files for {date_str}: {error}")
+                            else:
+                                logger.info(f"[BATCH_ANALYSIS] Date {date_str}: {file_count} files (cumulative: {total_files_to_process})")
         finally:
-            # Always close SFTP client if it exists and is not local
-            if 'client' in locals() and client and config.APP_ENV != "local":
-                try:
-                    logger.info(f"[BATCH_ANALYSIS] Closing SFTP client")
-                    client.close()
-                except Exception as e:
-                    logger.warning(f"[BATCH_ANALYSIS] Error closing SFTP client: {e}")
+            # No-op for local client and per-thread clients are closed in worker finally.
+            pass
         
         # Step 5: Filter out empty dates if include_empty=False
         if not req.include_empty:
