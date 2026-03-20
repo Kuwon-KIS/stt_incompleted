@@ -113,29 +113,9 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     
-    # Suppress verbose paramiko INFO/DEBUG logs, but keep WARNING and ERROR
-    # This is done at multiple levels to ensure it persists after uvicorn starts
-    
-    # 1. Set level on loggers
+    # Keep Paramiko warnings/errors, suppress noisy connection INFO/DEBUG logs.
     for logger_name in ["paramiko", "paramiko.transport", "paramiko.transport.sftp"]:
-        param_logger = logging.getLogger(logger_name)
-        param_logger.setLevel(logging.WARNING)
-        param_logger.propagate = False
-    
-    # 2. Add filter to capture any remaining INFO logs and suppress them
-    class ParamikoFilter(logging.Filter):
-        def filter(self, record):
-            # Block INFO and DEBUG from paramiko loggers
-            if record.levelno <= logging.INFO and "paramiko" in record.name:
-                return False
-            return True
-    
-    # Apply filter to root logger and all handlers
-    for handler in logger.handlers:
-        handler.addFilter(ParamikoFilter())
-    
-    # Capture warnings as logs
-    logging.captureWarnings(True)
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
     
     return logger
 

@@ -74,10 +74,23 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     Returns:
         Configured logger
     """
-    logging.basicConfig(
-        format='%(asctime)s %(levelname)s %(name)s %(message)s',
-        level=getattr(logging, log_level.upper(), logging.INFO)
-    )
+    level = getattr(logging, log_level.upper(), logging.INFO)
+
+    # Configure root logger format if no handler exists yet.
+    # If handlers already exist (e.g., uvicorn), only align root level.
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            format='%(asctime)s %(levelname)s %(name)s %(message)s',
+            level=level
+        )
+    else:
+        root_logger.setLevel(level)
+
+    # Keep Paramiko warnings/errors, suppress noisy connection INFO/DEBUG logs.
+    for logger_name in ["paramiko", "paramiko.transport", "paramiko.transport.sftp"]:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
     return logging.getLogger(__name__)
 
 
